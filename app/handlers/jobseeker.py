@@ -1,12 +1,17 @@
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, StateFilter
+from aiogram.types import (
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 from aiogram.fsm.context import FSMContext
 
 from app.database.crud import (
     get_active_vacancies, get_vacancy, create_application, get_admins_by_role
 )
 from app.keyboards.inline import vacancies_keyboard
-from app.keyboards.reply import phone_keyboard, jobseeker_menu
+from app.keyboards.reply import phone_keyboard, main_menu
 from app.states.application_state import ApplicationState
 
 router = Router()
@@ -19,10 +24,65 @@ ALLOWED_MIME = (
 
 EDUCATION_OPTIONS = ["O'rta", "O'rta maxsus", "Oliy (bakalavr)", "Oliy (magistr)", "Boshqa"]
 
+CANCEL_BTN = "❌ Bekor qilish"
+
+
+# ── Yordamchi klaviaturalar ────────────────────────────────────────────────
+
+def cancel_keyboard():
+    """Har bir bosqichda pastda ko'rinadigan bekor qilish tugmasi."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=CANCEL_BTN)]],
+        resize_keyboard=True
+    )
+
+
+def phone_cancel_keyboard():
+    """Telefon + bekor qilish."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)],
+            [KeyboardButton(text=CANCEL_BTN)],
+        ],
+        resize_keyboard=True
+    )
+
 
 def education_keyboard():
     buttons = [[InlineKeyboardButton(text=e, callback_data=f"edu:{e}")] for e in EDUCATION_OPTIONS]
+    buttons.append([InlineKeyboardButton(text=CANCEL_BTN, callback_data="cancel_application")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def vacancy_cancel_keyboard(vacancies):
+    buttons = [
+        [InlineKeyboardButton(text=v.title, callback_data=f"apply:{v.id}")]
+        for v in vacancies
+    ]
+    buttons.append([InlineKeyboardButton(text=CANCEL_BTN, callback_data="cancel_application")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+# ── ❌ Bekor qilish — istalgan bosqichda ishlaydi ─────────────────────────
+
+@router.message(StateFilter(ApplicationState), F.text == CANCEL_BTN)
+@router.message(StateFilter(ApplicationState), Command("cancel"))
+async def cancel_application(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "❌ Ariza bekor qilindi.\nIstalgan vaqt qayta topshirishingiz mumkin.",
+        reply_markup=main_menu()
+    )
+
+
+@router.callback_query(StateFilter(ApplicationState), lambda c: c.data == "cancel_application")
+async def cancel_application_cb(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.answer(
+        "❌ Ariza bekor qilindi.\nIstalgan vaqt qayta topshirishingiz mumkin.",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
 
 
 # ── Vakansiyalar ko'rish ───────────────────────────────────────────────────
@@ -69,9 +129,11 @@ async def _start_application(message: Message, state: FSMContext):
     await state.set_state(ApplicationState.full_name)
     await message.answer(
         "📝 <b>Ariza topshirish</b>\n\n"
-        "Bosqichma-bosqich savollarimizga javob bering.\n\n"
+        "Bosqichma-bosqich savollarimizga javob bering.\n"
+        "<i>Bekor qilish uchun pastdagi tugmani bosing.</i>\n\n"
         "1️⃣ Ismi-familiyangizni kiriting:",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
 
 
@@ -81,7 +143,10 @@ async def _start_application(message: Message, state: FSMContext):
 async def app_get_name(message: Message, state: FSMContext):
     await state.update_data(full_name=message.text)
     await state.set_state(ApplicationState.phone)
-    await message.answer("2️⃣ Telefon raqamingizni yuboring:", reply_markup=phone_keyboard())
+    await message.answer(
+        "2️⃣ Telefon raqamingizni yuboring:",
+        reply_markup=phone_cancel_keyboard()
+    )
 
 
 # ── 2. Telefon ────────────────────────────────────────────────────────────
@@ -105,7 +170,8 @@ async def _ask_address(message: Message, state: FSMContext):
     await message.answer(
         "3️⃣ Yashash manzilingizni kiriting:\n"
         "<i>(Shahar/tuman, mahalla)</i>",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
 
 
@@ -113,30 +179,38 @@ async def _ask_address(message: Message, state: FSMContext):
 async def app_get_address(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
     await state.set_state(ApplicationState.birthday)
-    await message.answer("4️⃣ Tug'ilgan kuningniz va yilingizni kiriting:\n<i>(Masalan: 19.10.2005)</i>", parse_mode="HTML")
+    await message.answer(
+        "4️⃣ Tug'ilgan kuningizni kiriting:\n<i>(Masalan: 19.10.2005)</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
+    )
 
 
-# ── 4. Tug'ilgan yili ─────────────────────────────────────────────────────
+# ── 4. Tug'ilgan kun ──────────────────────────────────────────────────────
 
 @router.message(ApplicationState.birthday)
-async def app_get_birth_year(message: Message, state: FSMContext):
+async def app_get_birthday(message: Message, state: FSMContext):
     from datetime import datetime
     text = message.text.strip()
     try:
         dt = datetime.strptime(text, "%d.%m.%Y")
         if not (1940 <= dt.year <= 2015):
-            raise ValueError("yil chegaradan tashqari")
+            raise ValueError
     except ValueError:
         await message.answer(
             "⚠️ Noto'g'ri format!\n"
             "Tug'ilgan kuningizni <b>KK.OO.YYYY</b> ko'rinishida kiriting.\n"
             "<i>Masalan: 19.10.2005</i>",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=cancel_keyboard()
         )
         return
     await state.update_data(birth_year=text)
     await state.set_state(ApplicationState.education)
-    await message.answer("5️⃣ Ma'lumotingizni tanlang:", reply_markup=education_keyboard())
+    await message.answer(
+        "5️⃣ Ma'lumotingizni tanlang:",
+        reply_markup=education_keyboard()
+    )
 
 
 # ── 5. Ma'lumot ───────────────────────────────────────────────────────────
@@ -149,20 +223,24 @@ async def app_get_education(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── 6. Lavozim tanlash (agar oldin tanlanmagan bo'lsa) ───────────────────
+# ── 6. Lavozim ────────────────────────────────────────────────────────────
 
 async def _ask_vacancy_step(message: Message, state: FSMContext):
     data = await state.get_data()
     if data.get("vacancy_id"):
-        # lavozim allaqachon tanlangan — to'g'ridan-to'g'ri stajga o'tish
         await state.set_state(ApplicationState.experience)
-        await message.answer("6️⃣ Ish stajingizni kiriting:\n<i>(Masalan: 3 yil yoki \"Stajsiz\")</i>",
-                             parse_mode="HTML")
+        await message.answer(
+            "6️⃣ Ish stajingizni kiriting:\n<i>(Masalan: 3 yil yoki \"Stajsiz\")</i>",
+            parse_mode="HTML",
+            reply_markup=cancel_keyboard()
+        )
         return
     vacancies = await get_active_vacancies()
     await state.set_state(ApplicationState.vacancy)
-    await message.answer("6️⃣ Qaysi lavozimga ariza topshirmoqchisiz?",
-                         reply_markup=vacancies_keyboard(vacancies))
+    await message.answer(
+        "6️⃣ Qaysi lavozimga ariza topshirmoqchisiz?",
+        reply_markup=vacancy_cancel_keyboard(vacancies)
+    )
 
 
 @router.callback_query(ApplicationState.vacancy, lambda c: c.data.startswith("apply:"))
@@ -172,7 +250,8 @@ async def app_get_vacancy(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ApplicationState.experience)
     await callback.message.answer(
         "7️⃣ Ish stajingizni kiriting:\n<i>(Masalan: 3 yil yoki \"Stajsiz\")</i>",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
     await callback.answer()
 
@@ -186,7 +265,8 @@ async def app_get_experience(message: Message, state: FSMContext):
     await message.answer(
         "8️⃣ CV faylingizni yuklang:\n"
         "<i>Qabul qilinadi: PDF yoki DOCX format</i>",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
 
 
@@ -196,7 +276,10 @@ async def app_get_experience(message: Message, state: FSMContext):
 async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
     doc = message.document
     if doc.mime_type not in ALLOWED_MIME:
-        await message.answer("❌ Noto'g'ri format! Faqat PDF yoki DOCX fayl yuklang.")
+        await message.answer(
+            "❌ Noto'g'ri format! Faqat PDF yoki DOCX fayl yuklang.",
+            reply_markup=cancel_keyboard()
+        )
         return
 
     await state.update_data(cv_file_id=doc.file_id)
@@ -221,16 +304,15 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
         "✅ <b>Arizangiz muvaffaqiyatli qabul qilindi!</b>\n\n"
         "Tez orada siz bilan bog'lanamiz.",
         parse_mode="HTML",
-        reply_markup=jobseeker_menu()
+        reply_markup=main_menu()
     )
 
-    # HR adminlarga xabar
     notify_text = (
         f"🔔 <b>Yangi ariza!</b>\n\n"
         f"👤 Ism: {data['full_name']}\n"
         f"📱 Tel: {data['phone']}\n"
         f"🏠 Manzil: {data.get('address') or '—'}\n"
-        f"🎂 Tug'ilgan yili: {data.get('birth_year') or '—'}\n"
+        f"🎂 Tug'ilgan: {data.get('birth_year') or '—'}\n"
         f"🎓 Ma'lumot: {data.get('education') or '—'}\n"
         f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
         f"📅 Staj: {data['experience']}"
@@ -249,4 +331,7 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
 
 @router.message(ApplicationState.cv)
 async def app_cv_wrong(message: Message):
-    await message.answer("❌ Iltimos, faqat PDF yoki DOCX fayl yuboring.")
+    await message.answer(
+        "❌ Iltimos, faqat PDF yoki DOCX fayl yuboring.",
+        reply_markup=cancel_keyboard()
+    )

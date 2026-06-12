@@ -1,25 +1,12 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-def client_menu():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🏢 Bizning Proyektlar")],
-            [KeyboardButton(text="📊 Loyiha Bosqichlari")],
-            [KeyboardButton(text="🔔 Yangiliklarga Obuna")],
-            [KeyboardButton(text="📞 Bog'lanish")],
-            [KeyboardButton(text="🔄 Rolni o'zgartirish")],
-        ],
-        resize_keyboard=True
-    )
-
-
-def jobseeker_menu():
+def main_menu():
+    """Asosiy menyu — barcha foydalanuvchilar uchun."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 Mavjud Vakansiyalar")],
             [KeyboardButton(text="📝 Ariza Topshirish")],
-            [KeyboardButton(text="🔄 Rolni o'zgartirish")],
         ],
         resize_keyboard=True
     )

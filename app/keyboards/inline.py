@@ -106,17 +106,13 @@ def unsubscribe_keyboard(project_id: int):
 
 # Admin keyboards
 def admin_main_keyboard(role: str):
-    buttons = []
-    if role in ("super_admin", "project_admin"):
-        buttons.append([InlineKeyboardButton(text="🏗 Loyihalar", callback_data="admin:projects")])
-    if role in ("super_admin", "hr_admin"):
-        buttons.append([InlineKeyboardButton(text="💼 Vakansiyalar", callback_data="admin:vacancies")])
-        buttons.append([InlineKeyboardButton(text="📁 Arizalar", callback_data="admin:applications")])
-    if role in ("super_admin", "sales_admin"):
-        buttons.append([InlineKeyboardButton(text="📋 Lidlar", callback_data="admin:leads")])
-        buttons.append([InlineKeyboardButton(text="📣 Broadcast", callback_data="admin:broadcast")])
+    """HR ga moslantirilgan admin panel."""
+    buttons = [
+        [InlineKeyboardButton(text="💼 Vakansiyalar", callback_data="admin:vacancies")],
+        [InlineKeyboardButton(text="📁 Arizalar",     callback_data="admin:applications")],
+        [InlineKeyboardButton(text="📊 Statistika",   callback_data="admin:stats")],
+    ]
     if role == "super_admin":
-        buttons.append([InlineKeyboardButton(text="📊 Statistika", callback_data="admin:stats")])
         buttons.append([InlineKeyboardButton(text="👥 Adminlar", callback_data="admin:admins")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

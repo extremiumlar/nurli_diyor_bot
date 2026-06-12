@@ -4,7 +4,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config import BOT_TOKEN
 from app.handlers.start import router as start_router
-from app.handlers.client import router as client_router
 from app.handlers.jobseeker import router as jobseeker_router
 from app.handlers.admin import router as admin_router
 
@@ -15,7 +14,6 @@ async def main():
 
     dp.include_routers(
         start_router,
-        client_router,
         jobseeker_router,
         admin_router,
     )
