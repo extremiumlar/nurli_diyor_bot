@@ -7,9 +7,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from aiogram.fsm.storage.memory import MemoryStorage
-
 from app.config import BOT_TOKEN
+from app.fsm_storage import SQLiteFSMStorage
 from app.database.connect import engine, Base
 from app.database import models  # noqa
 from app.handlers.start import router as start_router
@@ -20,8 +19,10 @@ from app.handlers.admin import router as admin_router
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
+_DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
+
 bot = Bot(token=BOT_TOKEN)
-dp  = Dispatcher(storage=MemoryStorage())
+dp  = Dispatcher(storage=SQLiteFSMStorage(_DB_PATH))
 dp.include_routers(start_router, jobseeker_router, admin_router)
 
 # DB jadvallarni yaratish (agar yo'q bo'lsa)
