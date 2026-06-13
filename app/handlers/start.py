@@ -27,7 +27,7 @@ async def about_handler(message: Message):
     text = (
         "🏗 <b>Nurli Diyor Qurilish Kompaniyasi</b>\n\n"
 
-        "Biz — Toshkent bo'ylab zamonaviy, sifatli va qulay uy-joylar quruvchi "
+        "Biz — Sirdaryo bo'ylab zamonaviy, sifatli va qulay uy-joylar quruvchi "
         "ishonchli qurilish kompaniyasimiz. Har bir loyihamizda mijozlarimizning "
         "ehtiyojlari va qulayligi birinchi o'rinda turadi.\n\n"
 
