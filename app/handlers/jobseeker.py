@@ -94,17 +94,55 @@ async def show_vacancies(message: Message):
     if not vacancies:
         await message.answer("Hozircha ochiq vakansiyalar yo'q.")
         return
-    for v in vacancies:
-        text = (
-            f"💼 <b>{v.title}</b>\n\n"
-            f"📋 Talablar:\n{v.requirements or '—'}\n\n"
-            f"🕐 Grafik: {v.schedule or '—'}\n"
-            f"💰 Ish haqi: Kelishiladi"
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="📝 Ariza Topshirish", callback_data=f"apply_vacancy:{v.id}")
-        ]])
-        await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    buttons = [
+        [InlineKeyboardButton(text=f"💼 {v.title}", callback_data=f"vacancy_detail:{v.id}")]
+        for v in vacancies
+    ]
+    await message.answer(
+        "📋 <b>Mavjud vakansiyalar:</b>\nBatafsil ma'lumot uchun bosing:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("vacancy_detail:"))
+async def show_vacancy_detail(callback: CallbackQuery):
+    vacancy_id = int(callback.data.split(":")[1])
+    v = await get_vacancy(vacancy_id)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.")
+        return
+    text = (
+        f"💼 <b>{v.title}</b>\n\n"
+        f"📋 <b>Talablar:</b>\n{v.requirements or '—'}\n\n"
+        f"🕐 <b>Grafik:</b> {v.schedule or '—'}\n"
+        f"💰 <b>Ish haqi:</b> Kelishiladi"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Ariza Topshirish", callback_data=f"apply_vacancy:{v.id}")],
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data="back_to_vacancies")]
+    ])
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "back_to_vacancies")
+async def back_to_vacancies(callback: CallbackQuery):
+    vacancies = await get_active_vacancies()
+    if not vacancies:
+        await callback.message.answer("Hozircha ochiq vakansiyalar yo'q.")
+        await callback.answer()
+        return
+    buttons = [
+        [InlineKeyboardButton(text=f"💼 {v.title}", callback_data=f"vacancy_detail:{v.id}")]
+        for v in vacancies
+    ]
+    await callback.message.answer(
+        "📋 <b>Mavjud vakansiyalar:</b>\nBatafsil ma'lumot uchun bosing:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
 
 
 # ── Ariza boshlash ─────────────────────────────────────────────────────────
