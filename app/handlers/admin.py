@@ -7,15 +7,16 @@ from app.config import SUPER_ADMIN_ID
 from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
-    get_applications, get_all_subscribed_users,
+    update_vacancy, get_applications, get_all_subscribed_users,
 )
 from app.keyboards.inline import (
     admin_main_keyboard,
     admin_vacancies_keyboard, admin_vacancy_detail_keyboard, vacancy_delete_confirm_keyboard,
+    vacancy_edit_field_keyboard,
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
 )
-from app.states.admin_state import AddVacancyState, AddAdminState, EditAdminState
+from app.states.admin_state import AddVacancyState, AddAdminState, EditAdminState, EditVacancyState
 
 router = Router()
 
@@ -181,6 +182,59 @@ async def vacancy_delete_confirm(callback: CallbackQuery):
     await delete_vacancy(vacancy_id)
     await callback.message.answer(f"🗑 <b>{title}</b> o'chirildi.", parse_mode="HTML")
     await callback.answer()
+
+
+# ── Vakansiya tahrirlash ───────────────────────────────────────────────────
+
+FIELD_LABELS = {
+    "title":        "📝 Nomi",
+    "requirements": "📋 Talablar",
+    "schedule":     "🕐 Ish grafigi",
+}
+
+
+@router.callback_query(lambda c: c.data.startswith("admin_vacancy_edit:"))
+async def vacancy_edit_start(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vacancy_id = int(callback.data.split(":")[1])
+    v = await get_vacancy(vacancy_id)
+    await state.update_data(edit_vacancy_id=vacancy_id)
+    await state.set_state(EditVacancyState.field)
+    await callback.message.answer(
+        f"✏️ <b>{v.title}</b> — qaysi maydonni tahrirlaysiz?",
+        parse_mode="HTML",
+        reply_markup=vacancy_edit_field_keyboard(vacancy_id)
+    )
+    await callback.answer()
+
+
+@router.callback_query(EditVacancyState.field, lambda c: c.data.startswith("vedit_field:"))
+async def vacancy_edit_field(callback: CallbackQuery, state: FSMContext):
+    _, vacancy_id, field = callback.data.split(":")
+    await state.update_data(edit_field=field)
+    await state.set_state(EditVacancyState.value)
+    await callback.message.answer(
+        f"{FIELD_LABELS.get(field, field)} uchun yangi matn kiriting:"
+    )
+    await callback.answer()
+
+
+@router.message(EditVacancyState.value)
+async def vacancy_edit_save(message: Message, state: FSMContext):
+    data = await state.get_data()
+    vacancy_id = data["edit_vacancy_id"]
+    field = data["edit_field"]
+    await state.clear()
+    v = await update_vacancy(vacancy_id, **{field: message.text.strip()})
+    await message.answer(
+        f"✅ <b>{v.title}</b> yangilandi!\n"
+        f"{FIELD_LABELS.get(field, field)}: {message.text.strip()}",
+        parse_mode="HTML",
+        reply_markup=admin_vacancy_detail_keyboard(v.id, v.active)
+    )
 
 
 # ── Arizalar ───────────────────────────────────────────────────────────────

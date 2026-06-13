@@ -179,9 +179,19 @@ def admin_vacancy_detail_keyboard(vacancy_id: int, active: bool):
             text="🔴 Yopish" if active else "🟢 Ochish",
             callback_data=f"admin_vacancy_toggle:{vacancy_id}"
         )],
+        [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"admin_vacancy_edit:{vacancy_id}")],
         [InlineKeyboardButton(text="📁 Arizalar", callback_data=f"admin_apps:{vacancy_id}")],
         [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin_vacancy_delete:{vacancy_id}")],
         [InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:vacancies")]
+    ])
+
+
+def vacancy_edit_field_keyboard(vacancy_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Nomi", callback_data=f"vedit_field:{vacancy_id}:title")],
+        [InlineKeyboardButton(text="📋 Talablar", callback_data=f"vedit_field:{vacancy_id}:requirements")],
+        [InlineKeyboardButton(text="🕐 Grafik", callback_data=f"vedit_field:{vacancy_id}:schedule")],
+        [InlineKeyboardButton(text="❌ Bekor", callback_data=f"admin_vacancy:{vacancy_id}")],
     ])
 
 

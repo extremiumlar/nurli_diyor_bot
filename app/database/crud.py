@@ -244,6 +244,17 @@ async def create_vacancy(title: str, requirements: str, schedule: str):
         return v
 
 
+async def update_vacancy(vacancy_id: int, **kwargs):
+    async with async_session() as session:
+        v = await session.get(Vacancy, vacancy_id)
+        if v:
+            for key, value in kwargs.items():
+                setattr(v, key, value)
+            await session.commit()
+            await session.refresh(v)
+        return v
+
+
 async def toggle_vacancy(vacancy_id: int, active: bool):
     async with async_session() as session:
         v = await session.get(Vacancy, vacancy_id)

@@ -38,4 +38,9 @@ class AddAdminState(StatesGroup):
 
 
 class EditAdminState(StatesGroup):
-    role = State()          # yangi rol tanlash
+    role = State()
+
+
+class EditVacancyState(StatesGroup):
+    field = State()
+    value = State()
