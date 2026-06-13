@@ -290,6 +290,21 @@ async def create_application(user_id: int, full_name: str, phone: str,
         return app
 
 
+async def has_applied_today(user_id: int, vacancy_id: int) -> bool:
+    from datetime import date
+    from sqlalchemy import func
+    async with async_session() as session:
+        today = date.today().isoformat()
+        result = await session.execute(
+            select(Application).where(
+                Application.user_id == user_id,
+                Application.vacancy_id == vacancy_id,
+                func.date(Application.created_at) == today
+            )
+        )
+        return result.scalars().first() is not None
+
+
 async def get_applications(vacancy_id: int | None = None):
     async with async_session() as session:
         q = select(Application)

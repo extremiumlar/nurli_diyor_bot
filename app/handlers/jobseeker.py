@@ -8,7 +8,8 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 
 from app.database.crud import (
-    get_active_vacancies, get_vacancy, create_application, get_admins_by_role
+    get_active_vacancies, get_vacancy, create_application, get_admins_by_role,
+    has_applied_today
 )
 from app.keyboards.inline import vacancies_keyboard
 from app.keyboards.reply import phone_keyboard, main_menu
@@ -284,6 +285,16 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
 
     await state.update_data(cv_file_id=doc.file_id)
     data = await state.get_data()
+
+    if await has_applied_today(message.from_user.id, data["vacancy_id"]):
+        await state.clear()
+        await message.answer(
+            "⚠️ Siz bugun bu vakansiyaga allaqachon ariza topshirgansiz.\n"
+            "Ertaga qayta urinib ko'ring.",
+            reply_markup=main_menu()
+        )
+        return
+
     await state.clear()
 
     await create_application(

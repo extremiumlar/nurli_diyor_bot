@@ -2,11 +2,11 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 def main_menu():
-    """Asosiy menyu — barcha foydalanuvchilar uchun."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 Mavjud Vakansiyalar")],
             [KeyboardButton(text="📝 Ariza Topshirish")],
+            [KeyboardButton(text="🏢 Biz haqimizda")],
         ],
         resize_keyboard=True
     )
