@@ -119,6 +119,7 @@ async def admin_vacancy_detail(callback: CallbackQuery, state: FSMContext):
         f"💼 <b>{v.title}</b>\n\n"
         f"📋 Talablar:\n{v.requirements or '—'}\n\n"
         f"🕐 Grafik: {v.schedule or '—'}\n"
+        f"💰 Ish haqi: {v.salary or 'Kelishiladi'}\n"
         f"Holat: {'🟢 Ochiq' if v.active else '🔴 Yopiq'}"
     )
     await callback.message.answer(
@@ -144,8 +145,29 @@ async def new_vacancy_req(message: Message, state: FSMContext):
 
 @router.message(AddVacancyState.schedule)
 async def new_vacancy_schedule(message: Message, state: FSMContext):
+    await state.update_data(schedule=message.text)
+    await state.set_state(AddVacancyState.salary)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    skip_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⏭ O'tkazib yuborish (Kelishiladi)", callback_data="vacancy_salary_skip")
+    ]])
+    await message.answer("💰 Ish haqi miqdorini kiriting:\n<i>Masalan: 3 000 000 so'm yoki O'tkazib yuboring</i>",
+                         parse_mode="HTML", reply_markup=skip_kb)
+
+
+@router.callback_query(AddVacancyState.salary, lambda c: c.data == "vacancy_salary_skip")
+async def new_vacancy_salary_skip(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    v = await create_vacancy(data["title"], data["requirements"], message.text)
+    v = await create_vacancy(data["title"], data["requirements"], data["schedule"], salary=None)
+    await state.clear()
+    await callback.message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(AddVacancyState.salary)
+async def new_vacancy_salary(message: Message, state: FSMContext):
+    data = await state.get_data()
+    v = await create_vacancy(data["title"], data["requirements"], data["schedule"], salary=message.text.strip())
     await state.clear()
     await message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
 
@@ -190,6 +212,7 @@ FIELD_LABELS = {
     "title":        "📝 Nomi",
     "requirements": "📋 Talablar",
     "schedule":     "🕐 Ish grafigi",
+    "salary":       "💰 Ish haqi",
 }
 
 

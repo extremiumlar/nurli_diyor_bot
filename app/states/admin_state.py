@@ -24,6 +24,7 @@ class AddVacancyState(StatesGroup):
     title        = State()
     requirements = State()
     schedule     = State()
+    salary       = State()
 
 
 class BroadcastState(StatesGroup):

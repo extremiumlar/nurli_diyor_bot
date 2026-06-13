@@ -74,6 +74,7 @@ class Vacancy(Base):
     title: Mapped[str] = mapped_column(String(128))
     requirements: Mapped[str | None] = mapped_column(Text, nullable=True)
     schedule: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    salary: Mapped[str | None] = mapped_column(String(128), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 

@@ -235,9 +235,9 @@ async def get_all_vacancies():
         return result.scalars().all()
 
 
-async def create_vacancy(title: str, requirements: str, schedule: str):
+async def create_vacancy(title: str, requirements: str, schedule: str, salary: str | None = None):
     async with async_session() as session:
-        v = Vacancy(title=title, requirements=requirements, schedule=schedule)
+        v = Vacancy(title=title, requirements=requirements, schedule=schedule, salary=salary)
         session.add(v)
         await session.commit()
         await session.refresh(v)
