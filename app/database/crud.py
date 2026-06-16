@@ -280,19 +280,22 @@ async def delete_vacancy(vacancy_id: int):
 # ── Applications ───────────────────────────────────────────────────────────
 
 async def create_application(user_id: int, full_name: str, phone: str,
-                              address: str | None, birth_year: str | None,
-                              education: str | None, vacancy_id: int,
-                              experience: str, cv_file_id: str):
+                              address: str | None, age: int | None,
+                              languages: str | None, education: str | None,
+                              vacancy_id: int, experience: str | None,
+                              additional_skills: str | None, cv_file_id: str):
     async with async_session() as session:
         app = Application(
             user_id=user_id,
             full_name=full_name,
             phone=phone,
             address=address,
-            birth_year=birth_year,
+            age=age,
+            languages=languages,
             education=education,
             vacancy_id=vacancy_id,
             experience=experience,
+            additional_skills=additional_skills,
             cv_file_id=cv_file_id
         )
         session.add(app)

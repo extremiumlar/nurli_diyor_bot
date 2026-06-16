@@ -86,11 +86,14 @@ class Application(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     full_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    address: Mapped[str | None] = mapped_column(String(256), nullable=True)   # yashash manzili
-    birth_year: Mapped[str | None] = mapped_column(String(10), nullable=True) # tug'ilgan yili
+    address: Mapped[str | None] = mapped_column(String(256), nullable=True)   # qayerdan
+    birth_year: Mapped[str | None] = mapped_column(String(10), nullable=True) # legacy: tug'ilgan yili
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)            # yosh
+    languages: Mapped[str | None] = mapped_column(String(256), nullable=True) # qaysi tillarni biladi
     education: Mapped[str | None] = mapped_column(String(128), nullable=True) # ma'lumoti
     vacancy_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vacancies.id"), nullable=True)
-    experience: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    experience: Mapped[str | None] = mapped_column(Text, nullable=True)        # qayerda ishlagan
+    additional_skills: Mapped[str | None] = mapped_column(Text, nullable=True) # qo'shimcha bilim va ko'nikmalar
     cv_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 

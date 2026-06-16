@@ -293,20 +293,25 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
         return
     for app in apps[:15]:
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+        yosh = app.age or app.birth_year or '—'
         text = (
             f"📁 <b>Ariza #{app.id}</b>\n"
             f"👤 {app.full_name}\n"
             f"📱 {app.phone}\n"
-            f"🏠 Manzil: {app.address or '—'}\n"
-            f"🎂 Tug'ilgan: {app.birth_year or '—'}\n"
-            f"🎓 Ma'lumot: {app.education or '—'}\n"
+            f"🎂 Yosh: {yosh}\n"
+            f"📍 Qayerdan: {app.address or '—'}\n"
+            f"🗣 Tillar: {app.languages or '—'}\n"
             f"💼 Lavozim: {v.title if v else '—'}\n"
-            f"📅 Staj: {app.experience or '—'}"
+            f"🏢 Ish tajribasi: {app.experience or '—'}\n"
+            f"🎓 Ma'lumot: {app.education or '—'}\n"
+            f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
         )
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="📄 CV ko'rish", callback_data=f"get_cv:{app.id}")
-        ]])
+        kb = None
+        if app.cv_file_id:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="📄 CV ko'rish", callback_data=f"get_cv:{app.id}")
+            ]])
         await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 

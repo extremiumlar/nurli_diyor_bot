@@ -2,13 +2,13 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class ApplicationState(StatesGroup):
-    # --- Umumiy savollar (barcha lavozimlar uchun) ---
-    full_name  = State()   # 1. Ismi-familiyasi
-    phone      = State()   # 2. Telefon raqami
-    address    = State()   # 3. Yashash manzili
-    birthday = State()   # 4. Tug'ilgan yili
-    education  = State()   # 5. Ma'lumoti (o'rta, oliy, ...)
-    # --- Lavozimga oid ---
-    vacancy    = State()   # 6. Qaysi lavozim (agar oldin tanlanmagan bo'lsa)
-    experience = State()   # 7. Ish staji
-    cv         = State()   # 8. CV fayl
+    # Foydalanuvchidan tartibli ravishda so'raladigan savollar
+    full_name         = State()   # 1. Ism-familiyasi
+    phone             = State()   # 2. Telefon raqami
+    age               = State()   # 3. Yosh
+    address           = State()   # 4. Qayerdan
+    languages         = State()   # 5. Qaysi tillarni biladi
+    vacancy           = State()   # 6. Qanday kasbda ishlamoqchi (lavozim)
+    past_work         = State()   # 7. Qayerda ishlagan
+    education         = State()   # 8. Ma'lumoti
+    additional_skills = State()   # 9. Qo'shimcha bilim va ko'nikmalar

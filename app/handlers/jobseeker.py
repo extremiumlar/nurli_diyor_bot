@@ -11,21 +11,15 @@ from app.database.crud import (
     get_active_vacancies, get_vacancy, create_application, get_admins_by_role,
     has_applied_today
 )
-from app.keyboards.inline import vacancies_keyboard
-from app.keyboards.reply import phone_keyboard, main_menu
+from app.keyboards.reply import main_menu
 from app.states.application_state import ApplicationState
 
 router = Router()
 
-ALLOWED_MIME = (
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
-
 EDUCATION_OPTIONS = ["O'rta", "O'rta maxsus", "Oliy (bakalavr)", "Oliy (magistr)", "Boshqa"]
 
 CANCEL_BTN = "❌ Bekor qilish"
+SKIP_BTN   = "⏭ O'tkazib yuborish"
 
 
 # ── Yordamchi klaviaturalar ────────────────────────────────────────────────
@@ -34,6 +28,17 @@ def cancel_keyboard():
     """Har bir bosqichda pastda ko'rinadigan bekor qilish tugmasi."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=CANCEL_BTN)]],
+        resize_keyboard=True
+    )
+
+
+def skip_cancel_keyboard():
+    """O'tkazib yuborish + bekor qilish."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=SKIP_BTN)],
+            [KeyboardButton(text=CANCEL_BTN)],
+        ],
         resize_keyboard=True
     )
 
@@ -170,13 +175,13 @@ async def _start_application(message: Message, state: FSMContext):
         "📝 <b>Ariza topshirish</b>\n\n"
         "Bosqichma-bosqich savollarimizga javob bering.\n"
         "<i>Bekor qilish uchun pastdagi tugmani bosing.</i>\n\n"
-        "1️⃣ Ismi-familiyangizni kiriting:",
+        "1️⃣ Ism-familiyangizni kiriting:",
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
 
 
-# ── 1. Ismi-familiya ──────────────────────────────────────────────────────
+# ── 1. Ism-familiya ───────────────────────────────────────────────────────
 
 @router.message(ApplicationState.full_name)
 async def app_get_name(message: Message, state: FSMContext):
@@ -193,73 +198,65 @@ async def app_get_name(message: Message, state: FSMContext):
 @router.message(ApplicationState.phone, F.contact)
 async def app_get_phone_contact(message: Message, state: FSMContext):
     await state.update_data(phone=message.contact.phone_number)
-    await _ask_address(message, state)
+    await _ask_age(message, state)
 
 
 @router.message(ApplicationState.phone, F.text)
 async def app_get_phone_text(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
-    await _ask_address(message, state)
+    await _ask_age(message, state)
 
 
-# ── 3. Yashash manzili ────────────────────────────────────────────────────
+# ── 3. Yosh ───────────────────────────────────────────────────────────────
 
-async def _ask_address(message: Message, state: FSMContext):
-    await state.set_state(ApplicationState.address)
+async def _ask_age(message: Message, state: FSMContext):
+    await state.set_state(ApplicationState.age)
     await message.answer(
-        "3️⃣ Yashash manzilingizni kiriting:\n"
-        "<i>(Shahar/tuman, mahalla)</i>",
+        "3️⃣ Yoshingizni kiriting:\n<i>(Masalan: 25)</i>",
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
 
 
-@router.message(ApplicationState.address)
-async def app_get_address(message: Message, state: FSMContext):
-    await state.update_data(address=message.text)
-    await state.set_state(ApplicationState.birthday)
-    await message.answer(
-        "4️⃣ Tug'ilgan kuningizni kiriting:\n<i>(Masalan: 19.10.2005)</i>",
-        parse_mode="HTML",
-        reply_markup=cancel_keyboard()
-    )
-
-
-# ── 4. Tug'ilgan kun ──────────────────────────────────────────────────────
-
-@router.message(ApplicationState.birthday)
-async def app_get_birthday(message: Message, state: FSMContext):
-    from datetime import datetime
+@router.message(ApplicationState.age)
+async def app_get_age(message: Message, state: FSMContext):
     text = message.text.strip()
-    try:
-        dt = datetime.strptime(text, "%d.%m.%Y")
-        if not (1940 <= dt.year <= 2015):
-            raise ValueError
-    except ValueError:
+    if not text.isdigit() or not (10 <= int(text) <= 90):
         await message.answer(
-            "⚠️ Noto'g'ri format!\n"
-            "Tug'ilgan kuningizni <b>KK.OO.YYYY</b> ko'rinishida kiriting.\n"
-            "<i>Masalan: 19.10.2005</i>",
+            "⚠️ Yoshingizni faqat raqam bilan kiriting.\n<i>Masalan: 25</i>",
             parse_mode="HTML",
             reply_markup=cancel_keyboard()
         )
         return
-    await state.update_data(birth_year=text)
-    await state.set_state(ApplicationState.education)
+    await state.update_data(age=int(text))
+    await state.set_state(ApplicationState.address)
     await message.answer(
-        "5️⃣ Ma'lumotingizni tanlang:",
-        reply_markup=education_keyboard()
+        "4️⃣ Qayerdansiz?\n<i>(Viloyat / shahar / tuman)</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
 
 
-# ── 5. Ma'lumot ───────────────────────────────────────────────────────────
+# ── 4. Qayerdan ───────────────────────────────────────────────────────────
 
-@router.callback_query(ApplicationState.education, lambda c: c.data.startswith("edu:"))
-async def app_get_education(callback: CallbackQuery, state: FSMContext):
-    edu = callback.data.split(":", 1)[1]
-    await state.update_data(education=edu)
-    await _ask_vacancy_step(callback.message, state)
-    await callback.answer()
+@router.message(ApplicationState.address)
+async def app_get_address(message: Message, state: FSMContext):
+    await state.update_data(address=message.text)
+    await state.set_state(ApplicationState.languages)
+    await message.answer(
+        "5️⃣ Qaysi tillarni bilasiz?\n"
+        "<i>(Masalan: O'zbek, Rus, Ingliz)</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
+    )
+
+
+# ── 5. Tillar ─────────────────────────────────────────────────────────────
+
+@router.message(ApplicationState.languages)
+async def app_get_languages(message: Message, state: FSMContext):
+    await state.update_data(languages=message.text)
+    await _ask_vacancy_step(message, state)
 
 
 # ── 6. Lavozim ────────────────────────────────────────────────────────────
@@ -267,17 +264,12 @@ async def app_get_education(callback: CallbackQuery, state: FSMContext):
 async def _ask_vacancy_step(message: Message, state: FSMContext):
     data = await state.get_data()
     if data.get("vacancy_id"):
-        await state.set_state(ApplicationState.experience)
-        await message.answer(
-            "6️⃣ Ish stajingizni kiriting:\n<i>(Masalan: 3 yil yoki \"Stajsiz\")</i>",
-            parse_mode="HTML",
-            reply_markup=cancel_keyboard()
-        )
+        await _ask_past_work(message, state)
         return
     vacancies = await get_active_vacancies()
     await state.set_state(ApplicationState.vacancy)
     await message.answer(
-        "6️⃣ Qaysi lavozimga ariza topshirmoqchisiz?",
+        "6️⃣ Qanday kasbda ishlamoqchisiz?",
         reply_markup=vacancy_cancel_keyboard(vacancies)
     )
 
@@ -286,42 +278,56 @@ async def _ask_vacancy_step(message: Message, state: FSMContext):
 async def app_get_vacancy(callback: CallbackQuery, state: FSMContext):
     vacancy_id = int(callback.data.split(":")[1])
     await state.update_data(vacancy_id=vacancy_id)
-    await state.set_state(ApplicationState.experience)
-    await callback.message.answer(
-        "7️⃣ Ish stajingizni kiriting:\n<i>(Masalan: 3 yil yoki \"Stajsiz\")</i>",
+    await _ask_past_work(callback.message, state)
+    await callback.answer()
+
+
+# ── 7. Qayerda ishlagan ───────────────────────────────────────────────────
+
+async def _ask_past_work(message: Message, state: FSMContext):
+    await state.set_state(ApplicationState.past_work)
+    await message.answer(
+        "7️⃣ Ilgari qayerda ishlagansiz?\n"
+        "<i>(Tashkilot nomi, lavozim, davri. Tajribangiz bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
         parse_mode="HTML",
-        reply_markup=cancel_keyboard()
+        reply_markup=skip_cancel_keyboard()
+    )
+
+
+@router.message(ApplicationState.past_work)
+async def app_get_past_work(message: Message, state: FSMContext):
+    value = None if message.text == SKIP_BTN else message.text
+    await state.update_data(past_work=value)
+    await state.set_state(ApplicationState.education)
+    await message.answer(
+        "8️⃣ Ma'lumotingizni tanlang:",
+        reply_markup=education_keyboard()
+    )
+
+
+# ── 8. Ma'lumot ───────────────────────────────────────────────────────────
+
+@router.callback_query(ApplicationState.education, lambda c: c.data.startswith("edu:"))
+async def app_get_education(callback: CallbackQuery, state: FSMContext):
+    edu = callback.data.split(":", 1)[1]
+    await state.update_data(education=edu)
+    await state.set_state(ApplicationState.additional_skills)
+    await callback.message.answer(
+        "9️⃣ Qo'shimcha bilim va ko'nikmalaringiz bormi?\n"
+        "<i>(Masalan: kompyuter dasturlari, haydovchilik guvohnomasi, sertifikatlar va h.k. "
+        "Bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
+        parse_mode="HTML",
+        reply_markup=skip_cancel_keyboard()
     )
     await callback.answer()
 
 
-# ── 7. Ish staji ──────────────────────────────────────────────────────────
+# ── 9. Qo'shimcha ko'nikmalar — yakuniy qadam ─────────────────────────────
 
-@router.message(ApplicationState.experience)
-async def app_get_experience(message: Message, state: FSMContext):
-    await state.update_data(experience=message.text)
-    await state.set_state(ApplicationState.cv)
-    await message.answer(
-        "8️⃣ CV faylingizni yuklang:\n"
-        "<i>Qabul qilinadi: PDF yoki DOCX format</i>",
-        parse_mode="HTML",
-        reply_markup=cancel_keyboard()
-    )
-
-
-# ── 8. CV fayl ────────────────────────────────────────────────────────────
-
-@router.message(ApplicationState.cv, F.document)
-async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
-    doc = message.document
-    if doc.mime_type not in ALLOWED_MIME:
-        await message.answer(
-            "❌ Noto'g'ri format! Faqat PDF yoki DOCX fayl yuklang.",
-            reply_markup=cancel_keyboard()
-        )
-        return
-
-    await state.update_data(cv_file_id=doc.file_id)
+@router.message(ApplicationState.additional_skills)
+async def app_get_additional_skills(message: Message, state: FSMContext, bot: Bot):
+    value = None if message.text == SKIP_BTN else message.text
+    await state.update_data(additional_skills=value)
     data = await state.get_data()
 
     if await has_applied_today(message.from_user.id, data["vacancy_id"]):
@@ -340,11 +346,13 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
         full_name=data["full_name"],
         phone=data["phone"],
         address=data.get("address"),
-        birth_year=data.get("birth_year"),
+        age=data.get("age"),
+        languages=data.get("languages"),
         education=data.get("education"),
         vacancy_id=data["vacancy_id"],
-        experience=data["experience"],
-        cv_file_id=data["cv_file_id"]
+        experience=data.get("past_work"),
+        additional_skills=data.get("additional_skills"),
+        cv_file_id=None
     )
 
     vacancy = await get_vacancy(data["vacancy_id"])
@@ -360,11 +368,13 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
         f"🔔 <b>Yangi ariza!</b>\n\n"
         f"👤 Ism: {data['full_name']}\n"
         f"📱 Tel: {data['phone']}\n"
-        f"🏠 Manzil: {data.get('address') or '—'}\n"
-        f"🎂 Tug'ilgan: {data.get('birth_year') or '—'}\n"
-        f"🎓 Ma'lumot: {data.get('education') or '—'}\n"
+        f"🎂 Yosh: {data.get('age') or '—'}\n"
+        f"📍 Qayerdan: {data.get('address') or '—'}\n"
+        f"🗣 Tillar: {data.get('languages') or '—'}\n"
         f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
-        f"📅 Staj: {data['experience']}"
+        f"🏢 Ish tajribasi: {data.get('past_work') or '—'}\n"
+        f"🎓 Ma'lumot: {data.get('education') or '—'}\n"
+        f"✨ Qo'shimcha ko'nikmalar: {data.get('additional_skills') or '—'}"
     )
     admins = await get_admins_by_role("hr_admin")
     from app.config import SUPER_ADMIN_ID
@@ -372,15 +382,5 @@ async def app_get_cv(message: Message, state: FSMContext, bot: Bot):
     for admin_id in notify_ids:
         try:
             await bot.send_message(admin_id, notify_text, parse_mode="HTML")
-            await bot.send_document(admin_id, document=data["cv_file_id"],
-                                    caption=f"📄 CV — {data['full_name']}")
         except Exception:
             pass
-
-
-@router.message(ApplicationState.cv)
-async def app_cv_wrong(message: Message):
-    await message.answer(
-        "❌ Iltimos, faqat PDF yoki DOCX fayl yuboring.",
-        reply_markup=cancel_keyboard()
-    )
