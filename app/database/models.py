@@ -94,6 +94,7 @@ class Application(Base):
     vacancy_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vacancies.id"), nullable=True)
     experience: Mapped[str | None] = mapped_column(Text, nullable=True)        # qayerda ishlagan
     additional_skills: Mapped[str | None] = mapped_column(Text, nullable=True) # qo'shimcha bilim va ko'nikmalar
+    photo_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True) # rasm
     cv_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 

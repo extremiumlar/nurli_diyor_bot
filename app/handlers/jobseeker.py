@@ -322,12 +322,44 @@ async def app_get_education(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── 9. Qo'shimcha ko'nikmalar — yakuniy qadam ─────────────────────────────
+# ── 9. Qo'shimcha ko'nikmalar ─────────────────────────────────────────────
 
 @router.message(ApplicationState.additional_skills)
-async def app_get_additional_skills(message: Message, state: FSMContext, bot: Bot):
+async def app_get_additional_skills(message: Message, state: FSMContext):
     value = None if message.text == SKIP_BTN else message.text
     await state.update_data(additional_skills=value)
+    await state.set_state(ApplicationState.photo)
+    await message.answer(
+        "🔟 O'zingizning rasmingizni yuboring.\n"
+        "<i>(Agar bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
+        parse_mode="HTML",
+        reply_markup=skip_cancel_keyboard()
+    )
+
+
+# ── 10. Rasm — yakuniy qadam ──────────────────────────────────────────────
+
+@router.message(ApplicationState.photo, F.photo)
+async def app_get_photo(message: Message, state: FSMContext, bot: Bot):
+    await state.update_data(photo_file_id=message.photo[-1].file_id)
+    await _finalize_application(message, state, bot)
+
+
+@router.message(ApplicationState.photo, F.text == SKIP_BTN)
+async def app_skip_photo(message: Message, state: FSMContext, bot: Bot):
+    await state.update_data(photo_file_id=None)
+    await _finalize_application(message, state, bot)
+
+
+@router.message(ApplicationState.photo)
+async def app_photo_wrong(message: Message):
+    await message.answer(
+        "❌ Iltimos, rasm yuboring yoki \"O'tkazib yuborish\" tugmasini bosing.",
+        reply_markup=skip_cancel_keyboard()
+    )
+
+
+async def _finalize_application(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
 
     if await has_applied_today(message.from_user.id, data["vacancy_id"]):
@@ -352,6 +384,7 @@ async def app_get_additional_skills(message: Message, state: FSMContext, bot: Bo
         vacancy_id=data["vacancy_id"],
         experience=data.get("past_work"),
         additional_skills=data.get("additional_skills"),
+        photo_file_id=data.get("photo_file_id"),
         cv_file_id=None
     )
 
@@ -379,8 +412,12 @@ async def app_get_additional_skills(message: Message, state: FSMContext, bot: Bo
     admins = await get_admins_by_role("hr_admin")
     from app.config import SUPER_ADMIN_ID
     notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
+    photo_id = data.get("photo_file_id")
     for admin_id in notify_ids:
         try:
-            await bot.send_message(admin_id, notify_text, parse_mode="HTML")
+            if photo_id:
+                await bot.send_photo(admin_id, photo=photo_id, caption=notify_text, parse_mode="HTML")
+            else:
+                await bot.send_message(admin_id, notify_text, parse_mode="HTML")
         except Exception:
             pass

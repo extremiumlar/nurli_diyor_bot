@@ -15,6 +15,7 @@ COLUMNS_TO_ADD = [
     ("age",               "INTEGER"),
     ("languages",         "VARCHAR(256)"),
     ("additional_skills", "TEXT"),
+    ("photo_file_id",     "VARCHAR(256)"),
 ]
 
 

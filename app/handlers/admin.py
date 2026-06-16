@@ -307,11 +307,12 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
             f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
         )
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = None
+        row = []
+        if app.photo_file_id:
+            row.append(InlineKeyboardButton(text="📷 Rasm", callback_data=f"get_photo:{app.id}"))
         if app.cv_file_id:
-            kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="📄 CV ko'rish", callback_data=f"get_cv:{app.id}")
-            ]])
+            row.append(InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}"))
+        kb = InlineKeyboardMarkup(inline_keyboard=[row]) if row else None
         await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 
@@ -328,6 +329,22 @@ async def get_cv(callback: CallbackQuery, bot: Bot):
         callback.from_user.id,
         document=app.cv_file_id,
         caption=f"📄 CV — {app.full_name}"
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("get_photo:"))
+async def get_photo(callback: CallbackQuery, bot: Bot):
+    app_id = int(callback.data.split(":")[1])
+    apps = await get_applications()
+    app = next((a for a in apps if a.id == app_id), None)
+    if not app or not app.photo_file_id:
+        await callback.answer("Rasm topilmadi.")
+        return
+    await bot.send_photo(
+        callback.from_user.id,
+        photo=app.photo_file_id,
+        caption=f"📷 {app.full_name}"
     )
     await callback.answer()
 

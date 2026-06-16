@@ -12,3 +12,4 @@ class ApplicationState(StatesGroup):
     past_work         = State()   # 7. Qayerda ishlagan
     education         = State()   # 8. Ma'lumoti
     additional_skills = State()   # 9. Qo'shimcha bilim va ko'nikmalar
+    photo             = State()   # 10. Rasm

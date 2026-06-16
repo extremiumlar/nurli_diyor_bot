@@ -283,7 +283,9 @@ async def create_application(user_id: int, full_name: str, phone: str,
                               address: str | None, age: int | None,
                               languages: str | None, education: str | None,
                               vacancy_id: int, experience: str | None,
-                              additional_skills: str | None, cv_file_id: str):
+                              additional_skills: str | None,
+                              photo_file_id: str | None = None,
+                              cv_file_id: str | None = None):
     async with async_session() as session:
         app = Application(
             user_id=user_id,
@@ -296,6 +298,7 @@ async def create_application(user_id: int, full_name: str, phone: str,
             vacancy_id=vacancy_id,
             experience=experience,
             additional_skills=additional_skills,
+            photo_file_id=photo_file_id,
             cv_file_id=cv_file_id
         )
         session.add(app)
