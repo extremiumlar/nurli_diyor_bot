@@ -330,10 +330,8 @@ async def app_get_additional_skills(message: Message, state: FSMContext):
     await state.update_data(additional_skills=value)
     await state.set_state(ApplicationState.photo)
     await message.answer(
-        "🔟 O'zingizning rasmingizni yuboring.\n"
-        "<i>(Agar bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
-        parse_mode="HTML",
-        reply_markup=skip_cancel_keyboard()
+        "🔟 O'zingizning rasmingizni yuboring.",
+        reply_markup=cancel_keyboard()
     )
 
 
@@ -345,17 +343,11 @@ async def app_get_photo(message: Message, state: FSMContext, bot: Bot):
     await _finalize_application(message, state, bot)
 
 
-@router.message(ApplicationState.photo, F.text == SKIP_BTN)
-async def app_skip_photo(message: Message, state: FSMContext, bot: Bot):
-    await state.update_data(photo_file_id=None)
-    await _finalize_application(message, state, bot)
-
-
 @router.message(ApplicationState.photo)
 async def app_photo_wrong(message: Message):
     await message.answer(
-        "❌ Iltimos, rasm yuboring yoki \"O'tkazib yuborish\" tugmasini bosing.",
-        reply_markup=skip_cancel_keyboard()
+        "❌ Iltimos, rasm yuboring.",
+        reply_markup=cancel_keyboard()
     )
 
 
