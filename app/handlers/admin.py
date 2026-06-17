@@ -118,7 +118,6 @@ async def admin_vacancy_detail(callback: CallbackQuery, state: FSMContext):
     text = (
         f"💼 <b>{v.title}</b>\n\n"
         f"📋 Talablar:\n{v.requirements or '—'}\n\n"
-        f"🕐 Grafik: {v.schedule or '—'}\n"
         f"💰 Ish haqi: {v.salary or 'Kelishiladi'}\n"
         f"Holat: {'🟢 Ochiq' if v.active else '🔴 Yopiq'}"
     )
@@ -139,13 +138,6 @@ async def new_vacancy_title(message: Message, state: FSMContext):
 @router.message(AddVacancyState.requirements)
 async def new_vacancy_req(message: Message, state: FSMContext):
     await state.update_data(requirements=message.text)
-    await state.set_state(AddVacancyState.schedule)
-    await message.answer("🕐 Ish grafigini kiriting:")
-
-
-@router.message(AddVacancyState.schedule)
-async def new_vacancy_schedule(message: Message, state: FSMContext):
-    await state.update_data(schedule=message.text)
     await state.set_state(AddVacancyState.salary)
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     skip_kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -158,7 +150,7 @@ async def new_vacancy_schedule(message: Message, state: FSMContext):
 @router.callback_query(AddVacancyState.salary, lambda c: c.data == "vacancy_salary_skip")
 async def new_vacancy_salary_skip(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    v = await create_vacancy(data["title"], data["requirements"], data["schedule"], salary=None)
+    v = await create_vacancy(data["title"], data["requirements"], salary=None)
     await state.clear()
     await callback.message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
     await callback.answer()
@@ -167,7 +159,7 @@ async def new_vacancy_salary_skip(callback: CallbackQuery, state: FSMContext):
 @router.message(AddVacancyState.salary)
 async def new_vacancy_salary(message: Message, state: FSMContext):
     data = await state.get_data()
-    v = await create_vacancy(data["title"], data["requirements"], data["schedule"], salary=message.text.strip())
+    v = await create_vacancy(data["title"], data["requirements"], salary=message.text.strip())
     await state.clear()
     await message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
 
@@ -211,7 +203,6 @@ async def vacancy_delete_confirm(callback: CallbackQuery):
 FIELD_LABELS = {
     "title":        "📝 Nomi",
     "requirements": "📋 Talablar",
-    "schedule":     "🕐 Ish grafigi",
     "salary":       "💰 Ish haqi",
 }
 

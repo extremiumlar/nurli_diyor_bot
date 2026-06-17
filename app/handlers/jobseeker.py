@@ -120,7 +120,6 @@ async def show_vacancy_detail(callback: CallbackQuery):
     text = (
         f"💼 <b>{v.title}</b>\n\n"
         f"📋 <b>Talablar:</b>\n{v.requirements or '—'}\n\n"
-        f"🕐 <b>Grafik:</b> {v.schedule or '—'}\n"
         f"💰 <b>Ish haqi:</b> {v.salary or 'Kelishiladi'}"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[

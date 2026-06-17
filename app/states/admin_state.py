@@ -23,7 +23,6 @@ class UpdateStagePhotoState(StatesGroup):
 class AddVacancyState(StatesGroup):
     title        = State()
     requirements = State()
-    schedule     = State()
     salary       = State()
 
 

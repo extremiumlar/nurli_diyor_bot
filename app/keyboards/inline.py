@@ -190,7 +190,6 @@ def vacancy_edit_field_keyboard(vacancy_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Nomi", callback_data=f"vedit_field:{vacancy_id}:title")],
         [InlineKeyboardButton(text="📋 Talablar", callback_data=f"vedit_field:{vacancy_id}:requirements")],
-        [InlineKeyboardButton(text="🕐 Grafik", callback_data=f"vedit_field:{vacancy_id}:schedule")],
         [InlineKeyboardButton(text="💰 Ish haqi", callback_data=f"vedit_field:{vacancy_id}:salary")],
         [InlineKeyboardButton(text="❌ Bekor", callback_data=f"admin_vacancy:{vacancy_id}")],
     ])
