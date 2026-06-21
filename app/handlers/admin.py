@@ -522,10 +522,11 @@ async def admin_settings(callback: CallbackQuery):
         return
     channel_link = await get_setting("channel_link")
     instagram    = await get_setting("instagram_link")
+    not_set      = "— (o'rnatilmagan)"
     text = (
         "⚙️ <b>Bot sozlamalari</b>\n\n"
-        f"📡 Kanal: {channel_link or '— (o'rnatilmagan)'}\n"
-        f"📸 Instagram: {instagram or '— (o'rnatilmagan)'}\n\n"
+        f"📡 Kanal: {channel_link or not_set}\n"
+        f"📸 Instagram: {instagram or not_set}\n\n"
         "<i>Kanal o'rnatilsa — foydalanuvchilar botdan foydalanishdan oldin "
         "kanalga a'zo bo'lishi shart bo'ladi.</i>"
     )
@@ -621,10 +622,12 @@ async def settings_clear_channel(callback: CallbackQuery):
     await set_setting("channel_id",   None)
     await set_setting("channel_link", None)
     await callback.answer("✅ Kanal sozlamasi o'chirildi.", show_alert=True)
+    not_set   = "— (o'rnatilmagan)"
+    instagram = await get_setting("instagram_link")
     await callback.message.edit_text(
         "⚙️ <b>Bot sozlamalari</b>\n\n"
-        "📡 Kanal: — (o'rnatilmagan)\n"
-        f"📸 Instagram: {await get_setting('instagram_link') or '— (o'rnatilmagan)'}",
+        f"📡 Kanal: {not_set}\n"
+        f"📸 Instagram: {instagram or not_set}",
         parse_mode="HTML",
         reply_markup=admin_settings_keyboard()
     )
