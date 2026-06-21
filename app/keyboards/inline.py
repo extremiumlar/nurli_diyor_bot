@@ -113,8 +113,18 @@ def admin_main_keyboard(role: str):
         [InlineKeyboardButton(text="📊 Statistika",   callback_data="admin:stats")],
     ]
     if role == "super_admin":
-        buttons.append([InlineKeyboardButton(text="👥 Adminlar", callback_data="admin:admins")])
+        buttons.append([InlineKeyboardButton(text="👥 Adminlar",    callback_data="admin:admins")])
+        buttons.append([InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="admin:settings")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def admin_settings_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📡 Kanal o'rnatish",     callback_data="settings:channel")],
+        [InlineKeyboardButton(text="📸 Instagram o'rnatish", callback_data="settings:instagram")],
+        [InlineKeyboardButton(text="🗑 Kanalni o'chirish",   callback_data="settings:clear_channel")],
+        [InlineKeyboardButton(text="◀️ Ortga",               callback_data="admin:back")],
+    ])
 
 
 def admin_projects_keyboard(projects):

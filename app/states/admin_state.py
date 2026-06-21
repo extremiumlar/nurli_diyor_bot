@@ -44,3 +44,8 @@ class EditAdminState(StatesGroup):
 class EditVacancyState(StatesGroup):
     field = State()
     value = State()
+
+
+class BotSettingsState(StatesGroup):
+    channel   = State()
+    instagram = State()

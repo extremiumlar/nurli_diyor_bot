@@ -1,9 +1,10 @@
 from aiogram import Router, Bot, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 
-from app.database.crud import create_or_update_user
+from app.database.crud import create_or_update_user, get_setting
 from app.keyboards.reply import main_menu
+from app.keyboards.inline import not_subscribed_keyboard
 
 router = Router()
 
@@ -59,3 +60,40 @@ async def about_handler(message: Message):
         "📩 Qo'shilishni xohlaysizmi? <b>Ariza Topshirish</b> tugmasini bosing!"
     )
     await message.answer(text, parse_mode="HTML", reply_markup=main_menu())
+
+
+@router.callback_query(lambda c: c.data == "check_subscribe")
+async def check_subscribe_handler(callback: CallbackQuery, bot: Bot):
+    channel_id_str = await get_setting("channel_id")
+    if not channel_id_str:
+        await callback.answer("✅ Botdan foydalanishingiz mumkin!", show_alert=False)
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return
+
+    try:
+        from aiogram.types import ChatMemberLeft, ChatMemberBanned
+        member = await bot.get_chat_member(int(channel_id_str), callback.from_user.id)
+        if isinstance(member, (ChatMemberLeft, ChatMemberBanned)):
+            await callback.answer("❌ Siz hali kanalga a'zo bo'lmagansiz!", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("✅ Botdan foydalanishingiz mumkin!")
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return
+
+    await callback.answer("✅ Rahmat! Botdan foydalanishingiz mumkin.", show_alert=True)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer(
+        "👋 <b>Xush kelibsiz!</b>\nQuyidagi bo'limlardan birini tanlang:",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )

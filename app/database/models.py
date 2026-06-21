@@ -99,6 +99,13 @@ class Application(Base):
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
 
+class BotSettings(Base):
+    __tablename__ = "bot_settings"
+
+    key:   Mapped[str]      = mapped_column(String(64), primary_key=True)
+    value: Mapped[str|None] = mapped_column(Text, nullable=True)
+
+
 class Admin(Base):
     __tablename__ = "admins"
 

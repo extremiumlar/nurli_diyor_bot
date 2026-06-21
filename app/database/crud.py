@@ -3,7 +3,7 @@ from sqlalchemy.orm import selectinload
 from app.database.connect import async_session
 from app.database.models import (
     User, Project, ProjectStage, Subscription,
-    Lead, Vacancy, Application, Admin
+    Lead, Vacancy, Application, Admin, BotSettings
 )
 
 
@@ -388,3 +388,22 @@ async def update_admin_role(telegram_id: int, new_role: str):
         if admin:
             admin.role = new_role
             await session.commit()
+
+
+# ── Bot sozlamalari ────────────────────────────────────────────────────────
+
+async def get_setting(key: str) -> str | None:
+    async with async_session() as session:
+        obj = await session.get(BotSettings, key)
+        return obj.value if obj else None
+
+
+async def set_setting(key: str, value: str | None):
+    async with async_session() as session:
+        obj = await session.get(BotSettings, key)
+        if obj:
+            obj.value = value
+        else:
+            obj = BotSettings(key=key, value=value)
+            session.add(obj)
+        await session.commit()

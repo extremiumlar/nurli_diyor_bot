@@ -8,15 +8,16 @@ from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
     update_vacancy, get_applications, get_all_subscribed_users,
+    get_setting, set_setting,
 )
 from app.keyboards.inline import (
-    admin_main_keyboard,
+    admin_main_keyboard, admin_settings_keyboard,
     admin_vacancies_keyboard, admin_vacancy_detail_keyboard, vacancy_delete_confirm_keyboard,
     vacancy_edit_field_keyboard,
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
 )
-from app.states.admin_state import AddVacancyState, AddAdminState, EditAdminState, EditVacancyState
+from app.states.admin_state import AddVacancyState, AddAdminState, EditAdminState, EditVacancyState, BotSettingsState
 
 router = Router()
 
@@ -510,3 +511,120 @@ async def admin_remove_confirm(callback: CallbackQuery):
     await remove_admin(tid)
     await callback.message.answer(f"✅ Admin <code>{tid}</code> o'chirildi.", parse_mode="HTML")
     await callback.answer()
+
+
+# ── Bot sozlamalari ────────────────────────────────────────────────────────
+
+@router.callback_query(lambda c: c.data == "admin:settings")
+async def admin_settings(callback: CallbackQuery):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    channel_link = await get_setting("channel_link")
+    instagram    = await get_setting("instagram_link")
+    text = (
+        "⚙️ <b>Bot sozlamalari</b>\n\n"
+        f"📡 Kanal: {channel_link or '— (o'rnatilmagan)'}\n"
+        f"📸 Instagram: {instagram or '— (o'rnatilmagan)'}\n\n"
+        "<i>Kanal o'rnatilsa — foydalanuvchilar botdan foydalanishdan oldin "
+        "kanalga a'zo bo'lishi shart bo'ladi.</i>"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML",
+                                     reply_markup=admin_settings_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "settings:channel")
+async def settings_channel_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await state.set_state(BotSettingsState.channel)
+    await callback.message.answer(
+        "📡 <b>Kanal o'rnatish</b>\n\n"
+        "Kanal username yoki linkini yuboring:\n"
+        "<code>@NurlidiyorResidence</code>\n"
+        "<code>https://t.me/NurlidiyorResidence</code>\n\n"
+        "<i>Eslatma: bot kanalda admin bo'lishi kerak!</i>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(BotSettingsState.channel)
+async def settings_channel_save(message: Message, state: FSMContext, bot: Bot):
+    raw = message.text.strip()
+
+    # Username yoki linkdan username ajratib olamiz
+    username = raw
+    if raw.startswith("https://t.me/"):
+        username = "@" + raw.split("t.me/")[-1].strip("/")
+    elif not raw.startswith("@"):
+        username = "@" + raw
+
+    try:
+        chat = await bot.get_chat(username)
+        chat_id   = chat.id
+        chat_link = f"https://t.me/{chat.username}" if chat.username else raw
+    except Exception as e:
+        await message.answer(
+            f"❌ Kanal topilmadi yoki bot kanalga qo'shilmagan.\n"
+            f"Xatolik: <code>{e}</code>\n\n"
+            "Iltimos, botni kanalga <b>admin</b> qiling va qayta urinib ko'ring.",
+            parse_mode="HTML"
+        )
+        return
+
+    await set_setting("channel_id",   str(chat_id))
+    await set_setting("channel_link", chat_link)
+    await state.clear()
+    await message.answer(
+        f"✅ Kanal o'rnatildi!\n"
+        f"📡 <b>{chat.title}</b>\n"
+        f"🔗 {chat_link}",
+        parse_mode="HTML",
+        reply_markup=admin_settings_keyboard()
+    )
+
+
+@router.callback_query(lambda c: c.data == "settings:instagram")
+async def settings_instagram_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await state.set_state(BotSettingsState.instagram)
+    await callback.message.answer(
+        "📸 <b>Instagram linkini o'rnatish</b>\n\n"
+        "Instagram sahifangiz to'liq linkini yuboring:\n"
+        "<code>https://instagram.com/nuriddinbuildings</code>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(BotSettingsState.instagram)
+async def settings_instagram_save(message: Message, state: FSMContext):
+    link = message.text.strip()
+    await set_setting("instagram_link", link)
+    await state.clear()
+    await message.answer(
+        f"✅ Instagram linki saqlandi!\n📸 {link}",
+        reply_markup=admin_settings_keyboard()
+    )
+
+
+@router.callback_query(lambda c: c.data == "settings:clear_channel")
+async def settings_clear_channel(callback: CallbackQuery):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await set_setting("channel_id",   None)
+    await set_setting("channel_link", None)
+    await callback.answer("✅ Kanal sozlamasi o'chirildi.", show_alert=True)
+    await callback.message.edit_text(
+        "⚙️ <b>Bot sozlamalari</b>\n\n"
+        "📡 Kanal: — (o'rnatilmagan)\n"
+        f"📸 Instagram: {await get_setting('instagram_link') or '— (o'rnatilmagan)'}",
+        parse_mode="HTML",
+        reply_markup=admin_settings_keyboard()
+    )
