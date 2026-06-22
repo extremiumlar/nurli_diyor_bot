@@ -123,7 +123,9 @@ def admin_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📡 Kanal o'rnatish",     callback_data="settings:channel")],
         [InlineKeyboardButton(text="📸 Instagram o'rnatish", callback_data="settings:instagram")],
+        [InlineKeyboardButton(text="📥 Arizalar guruhi",     callback_data="settings:apps_group")],
         [InlineKeyboardButton(text="🗑 Kanalni o'chirish",   callback_data="settings:clear_channel")],
+        [InlineKeyboardButton(text="🗑 Guruhni o'chirish",   callback_data="settings:clear_group")],
         [InlineKeyboardButton(text="◀️ Ortga",               callback_data="admin:back")],
     ])
 

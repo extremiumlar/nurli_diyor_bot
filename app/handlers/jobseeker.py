@@ -402,13 +402,20 @@ async def _finalize_application(message: Message, state: FSMContext, bot: Bot):
     )
     admins = await get_admins_by_role("hr_admin")
     from app.config import SUPER_ADMIN_ID
+    from app.database.crud import get_setting
     notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
+    group_id_str = await get_setting("apps_group_id")
+    if group_id_str:
+        try:
+            notify_ids.add(int(group_id_str))
+        except ValueError:
+            pass
     photo_id = data.get("photo_file_id")
-    for admin_id in notify_ids:
+    for chat_id in notify_ids:
         try:
             if photo_id:
-                await bot.send_photo(admin_id, photo=photo_id, caption=notify_text, parse_mode="HTML")
+                await bot.send_photo(chat_id, photo=photo_id, caption=notify_text, parse_mode="HTML")
             else:
-                await bot.send_message(admin_id, notify_text, parse_mode="HTML")
+                await bot.send_message(chat_id, notify_text, parse_mode="HTML")
         except Exception:
             pass

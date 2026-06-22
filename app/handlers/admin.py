@@ -371,7 +371,9 @@ async def app_search_start(callback: CallbackQuery, state: FSMContext):
         return
     await state.set_state(SearchApplicationState.tartib)
     await callback.message.answer(
-        f"🔍 Qidirilayotgan tartib raqamini kiriting (1 dan {len(apps)} gacha):"
+        f"🔍 Qidirilayotgan <b>tartib raqamini</b> (1 dan {len(apps)} gacha) "
+        f"yoki <b>ism familiyani</b> kiriting:",
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -379,24 +381,43 @@ async def app_search_start(callback: CallbackQuery, state: FSMContext):
 @router.message(SearchApplicationState.tartib)
 async def app_search_run(message: Message, state: FSMContext):
     text = message.text.strip()
-    if not text.isdigit():
-        await message.answer("⚠️ Faqat raqam kiriting.")
-        return
-    tartib = int(text)
     apps = await get_applications()
     total = len(apps)
-    if not (1 <= tartib <= total):
-        await message.answer(f"⚠️ Tartib {1} dan {total} gacha bo'lishi kerak.")
-        return
     await state.clear()
-    # desc-ordered: index = total - tartib
-    app = apps[total - tartib]
-    v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-    await message.answer(
-        _app_card_text(app, tartib, v),
-        parse_mode="HTML",
-        reply_markup=_app_card_keyboard(app)
-    )
+
+    if text.isdigit():
+        tartib = int(text)
+        if not (1 <= tartib <= total):
+            await message.answer(f"⚠️ Tartib {1} dan {total} gacha bo'lishi kerak.")
+            return
+        app = apps[total - tartib]
+        v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+        await message.answer(
+            _app_card_text(app, tartib, v),
+            parse_mode="HTML",
+            reply_markup=_app_card_keyboard(app)
+        )
+        return
+
+    query = text.lower()
+    matches = [
+        (idx, a) for idx, a in enumerate(apps)
+        if a.full_name and query in a.full_name.lower()
+    ]
+    if not matches:
+        await message.answer(f"❌ \"{text}\" bo'yicha ariza topilmadi.")
+        return
+    await message.answer(f"🔍 <b>{len(matches)} ta natija topildi:</b>", parse_mode="HTML")
+    for idx, app in matches[:20]:
+        tartib = total - idx
+        v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+        await message.answer(
+            _app_card_text(app, tartib, v),
+            parse_mode="HTML",
+            reply_markup=_app_card_keyboard(app)
+        )
+    if len(matches) > 20:
+        await message.answer(f"… va yana {len(matches) - 20} ta natija. Aniqroq qidiring.")
 
 
 # ── Ariza o'chirish ────────────────────────────────────────────────────────
@@ -776,22 +797,30 @@ async def admin_remove_confirm(callback: CallbackQuery):
 
 # ── Bot sozlamalari ────────────────────────────────────────────────────────
 
+async def _settings_text() -> str:
+    channel_link = await get_setting("channel_link")
+    instagram    = await get_setting("instagram_link")
+    group_title  = await get_setting("apps_group_title")
+    group_id     = await get_setting("apps_group_id")
+    not_set      = "— (o'rnatilmagan)"
+    group_display = f"{group_title} (<code>{group_id}</code>)" if group_id else not_set
+    return (
+        "⚙️ <b>Bot sozlamalari</b>\n\n"
+        f"📡 Kanal: {channel_link or not_set}\n"
+        f"📸 Instagram: {instagram or not_set}\n"
+        f"📥 Arizalar guruhi: {group_display}\n\n"
+        "<i>Kanal o'rnatilsa — foydalanuvchilar botdan foydalanishdan oldin "
+        "kanalga a'zo bo'lishi shart bo'ladi.\n"
+        "Arizalar guruhi o'rnatilsa — har bir yangi ariza shu guruhga ham yuboriladi.</i>"
+    )
+
+
 @router.callback_query(lambda c: c.data == "admin:settings")
 async def admin_settings(callback: CallbackQuery):
     if callback.from_user.id != SUPER_ADMIN_ID:
         await callback.answer("❌ Ruxsat yo'q.")
         return
-    channel_link = await get_setting("channel_link")
-    instagram    = await get_setting("instagram_link")
-    not_set      = "— (o'rnatilmagan)"
-    text = (
-        "⚙️ <b>Bot sozlamalari</b>\n\n"
-        f"📡 Kanal: {channel_link or not_set}\n"
-        f"📸 Instagram: {instagram or not_set}\n\n"
-        "<i>Kanal o'rnatilsa — foydalanuvchilar botdan foydalanishdan oldin "
-        "kanalga a'zo bo'lishi shart bo'ladi.</i>"
-    )
-    await callback.message.edit_text(text, parse_mode="HTML",
+    await callback.message.edit_text(await _settings_text(), parse_mode="HTML",
                                      reply_markup=admin_settings_keyboard())
     await callback.answer()
 
@@ -883,12 +912,56 @@ async def settings_clear_channel(callback: CallbackQuery):
     await set_setting("channel_id",   None)
     await set_setting("channel_link", None)
     await callback.answer("✅ Kanal sozlamasi o'chirildi.", show_alert=True)
-    not_set   = "— (o'rnatilmagan)"
-    instagram = await get_setting("instagram_link")
     await callback.message.edit_text(
-        "⚙️ <b>Bot sozlamalari</b>\n\n"
-        f"📡 Kanal: {not_set}\n"
-        f"📸 Instagram: {instagram or not_set}",
-        parse_mode="HTML",
+        await _settings_text(), parse_mode="HTML",
         reply_markup=admin_settings_keyboard()
+    )
+
+
+@router.callback_query(lambda c: c.data == "settings:apps_group")
+async def settings_apps_group_help(callback: CallbackQuery):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await callback.message.answer(
+        "📥 <b>Arizalar guruhini sozlash</b>\n\n"
+        "1. Botni guruhga qo'shing (super_admin sifatida)\n"
+        "2. Guruh ichida <code>/set_apps_group</code> deb yuboring\n"
+        "3. Bot guruh ID'sini avtomatik saqlaydi\n\n"
+        "<i>Shundan keyin har bir yangi ariza shu guruhga yuboriladi.</i>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "settings:clear_group")
+async def settings_clear_group(callback: CallbackQuery):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await set_setting("apps_group_id",    None)
+    await set_setting("apps_group_title", None)
+    await callback.answer("✅ Arizalar guruhi o'chirildi.", show_alert=True)
+    await callback.message.edit_text(
+        await _settings_text(), parse_mode="HTML",
+        reply_markup=admin_settings_keyboard()
+    )
+
+
+@router.message(Command("set_apps_group"))
+async def set_apps_group_cmd(message: Message):
+    if message.from_user.id != SUPER_ADMIN_ID:
+        await message.answer("❌ Faqat super admin uchun.")
+        return
+    if message.chat.type not in ("group", "supergroup"):
+        await message.answer("⚠️ Bu buyruq faqat guruh ichida ishlaydi.")
+        return
+    await set_setting("apps_group_id",    str(message.chat.id))
+    await set_setting("apps_group_title", message.chat.title or "Guruh")
+    await message.answer(
+        f"✅ Arizalar guruhi o'rnatildi!\n"
+        f"📥 <b>{message.chat.title}</b>\n"
+        f"🆔 <code>{message.chat.id}</code>\n\n"
+        f"Endi har bir yangi ariza shu guruhga yuboriladi.",
+        parse_mode="HTML"
     )
