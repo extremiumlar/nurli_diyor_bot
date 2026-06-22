@@ -283,7 +283,7 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
         await callback.message.answer("Arizalar yo'q.")
         await callback.answer()
         return
-    for app in apps[:15]:
+    for app in apps:
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
         yosh = app.age or app.birth_year or '—'
         text = (
