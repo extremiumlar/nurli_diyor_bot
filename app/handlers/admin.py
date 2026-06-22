@@ -368,6 +368,123 @@ async def get_photo(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
+# ── Excel eksport ──────────────────────────────────────────────────────────
+
+EXCEL_HEADERS = [
+    "#", "Topshirilgan vaqt", "Ism familiya", "Telefon", "Yosh",
+    "Qayerdan", "Tillar", "Lavozim", "Ish tajribasi", "Ma'lumot",
+    "Qo'shimcha ko'nikmalar", "Rasm", "CV",
+]
+
+_BAD_SHEET_CHARS = set('\\/?*[]:')
+
+
+def _safe_sheet_name(name: str, used: set[str]) -> str:
+    clean = "".join("_" if c in _BAD_SHEET_CHARS else c for c in (name or "Belgilanmagan"))
+    clean = clean.strip() or "Belgilanmagan"
+    clean = clean[:31]
+    base = clean
+    i = 2
+    while clean in used:
+        suffix = f" ({i})"
+        clean = (base[: 31 - len(suffix)]) + suffix
+        i += 1
+    used.add(clean)
+    return clean
+
+
+@router.callback_query(lambda c: c.data == "admin:export")
+async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    from aiogram.types import BufferedInputFile
+    from io import BytesIO
+    from datetime import datetime
+
+    apps = await get_applications()
+    if not apps:
+        await callback.answer("Arizalar yo'q.", show_alert=True)
+        return
+
+    await callback.answer("Tayyorlanmoqda…")
+
+    vacancies = await get_all_vacancies()
+    vacancy_map = {v.id: v for v in vacancies}
+
+    grouped: dict[int | None, list] = {}
+    for a in apps:
+        grouped.setdefault(a.vacancy_id, []).append(a)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used_names: set[str] = set()
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="305496", end_color="305496", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    ordered_vids = [v.id for v in vacancies if v.id in grouped] + [vid for vid in grouped if vid not in vacancy_map]
+
+    for vid in ordered_vids:
+        rows = grouped[vid]
+        v = vacancy_map.get(vid) if vid else None
+        sheet_name = _safe_sheet_name(v.title if v else "Belgilanmagan", used_names)
+        ws = wb.create_sheet(title=sheet_name)
+
+        ws.append(EXCEL_HEADERS)
+        for col_idx, _ in enumerate(EXCEL_HEADERS, start=1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+
+        for a in rows:
+            yosh = a.age or a.birth_year or ""
+            created = ""
+            if a.created_at:
+                created = a.created_at.strftime("%Y-%m-%d %H:%M") if isinstance(a.created_at, datetime) else str(a.created_at)
+            ws.append([
+                a.id,
+                created,
+                a.full_name or "",
+                a.phone or "",
+                yosh,
+                a.address or "",
+                a.languages or "",
+                v.title if v else "",
+                a.experience or "",
+                a.education or "",
+                a.additional_skills or "",
+                "Bor" if a.photo_file_id else "—",
+                "Bor" if a.cv_file_id else "—",
+            ])
+
+        widths = [6, 18, 26, 16, 6, 22, 22, 22, 30, 18, 30, 8, 8]
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+        ws.row_dimensions[1].height = 30
+        ws.freeze_panes = "A2"
+
+    if not wb.sheetnames:
+        wb.create_sheet("Arizalar")
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"arizalar_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    await bot.send_document(
+        callback.from_user.id,
+        document=BufferedInputFile(buf.read(), filename=filename),
+        caption=f"📥 Jami {len(apps)} ta ariza, {len(ordered_vids)} ta vakansiya bo'yicha."
+    )
+
+
 # ── Adminlar boshqaruvi ────────────────────────────────────────────────────
 
 @router.message(Command("addadmin"))

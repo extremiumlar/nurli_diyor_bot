@@ -110,6 +110,7 @@ def admin_main_keyboard(role: str):
     buttons = [
         [InlineKeyboardButton(text="💼 Vakansiyalar", callback_data="admin:vacancies")],
         [InlineKeyboardButton(text="📁 Arizalar",     callback_data="admin:applications")],
+        [InlineKeyboardButton(text="📥 Excel eksport", callback_data="admin:export")],
         [InlineKeyboardButton(text="📊 Statistika",   callback_data="admin:stats")],
     ]
     if role == "super_admin":
