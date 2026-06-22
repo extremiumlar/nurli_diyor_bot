@@ -14,7 +14,7 @@ from app.database.crud import (
 from app.keyboards.inline import (
     admin_main_keyboard, admin_settings_keyboard,
     admin_vacancies_keyboard, admin_vacancy_detail_keyboard, vacancy_delete_confirm_keyboard,
-    vacancy_edit_field_keyboard, vacancy_post_menu_keyboard,
+    vacancy_edit_field_keyboard, vacancy_post_menu_keyboard, applications_post_menu_keyboard,
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
 )
@@ -371,6 +371,7 @@ async def admin_applications(callback: CallbackQuery):
     ]
     buttons.append([InlineKeyboardButton(text="📁 Barcha arizalar", callback_data="admin_apps:all")])
     buttons.append([InlineKeyboardButton(text="🔍 Tartib bo'yicha qidirish", callback_data="admin_app_search")])
+    buttons.append([InlineKeyboardButton(text="📢 Guruhga yuborish",          callback_data="app_post:menu")])
     await callback.message.answer(
         "Vakansiya tanlang:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -564,6 +565,103 @@ async def app_delete_confirm(callback: CallbackQuery):
 async def app_delete_cancel(callback: CallbackQuery):
     await callback.message.edit_text("❌ O'chirish bekor qilindi.")
     await callback.answer()
+
+
+# ── Arizalarni guruhga yuborish ────────────────────────────────────────────
+
+def _application_post_text(app, tartib: int, vacancy) -> str:
+    yosh = app.age or app.birth_year or '—'
+    return (
+        f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
+        f"👤 {app.full_name or '—'}\n"
+        f"📱 {app.phone or '—'}\n"
+        f"🎂 Yosh: {yosh}\n"
+        f"📍 Qayerdan: {app.address or '—'}\n"
+        f"🗣 Tillar: {app.languages or '—'}\n"
+        f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
+        f"🏢 Ish tajribasi: {app.experience or '—'}\n"
+        f"🎓 Ma'lumot: {app.education or '—'}\n"
+        f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
+    )
+
+
+@router.callback_query(lambda c: c.data == "app_post:menu")
+async def app_post_menu(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vacancies = await get_all_vacancies()
+    await callback.message.answer(
+        "📢 <b>Arizalarni guruhga yuborish</b>\n\n"
+        "Hammasini yoki ma'lum vakansiya bo'yicha tanlang:",
+        parse_mode="HTML",
+        reply_markup=applications_post_menu_keyboard(vacancies)
+    )
+    await callback.answer()
+
+
+async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int | None):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    group_id_str = await get_setting("apps_group_id")
+    if not group_id_str:
+        await callback.answer(
+            "❌ Avval Sozlamalar → Arizalar guruhi ni o'rnating.",
+            show_alert=True
+        )
+        return
+    try:
+        group_id = int(group_id_str)
+    except ValueError:
+        await callback.answer("❌ Guruh ID xato.", show_alert=True)
+        return
+
+    apps = await get_applications(vacancy_id)
+    if not apps:
+        await callback.answer("Ariza yo'q.", show_alert=True)
+        return
+
+    await callback.answer(f"Yuborilmoqda… ({len(apps)} ta)")
+    total = len(apps)
+    sent = 0
+    failed = 0
+    import asyncio
+
+    for idx, app in enumerate(apps):
+        tartib = total - idx
+        v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+        text = _application_post_text(app, tartib, v)
+        try:
+            if app.photo_file_id:
+                await bot.send_photo(group_id, photo=app.photo_file_id,
+                                     caption=text, parse_mode="HTML")
+            else:
+                await bot.send_message(group_id, text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+        # Telegram rate-limit (group): ~20 msg/min — 3s gap
+        if idx < total - 1:
+            await asyncio.sleep(3)
+
+    summary = f"✅ {sent}/{total} ta ariza guruhga yuborildi."
+    if failed:
+        summary += f"\n⚠️ {failed} tasi yuborilmadi (xatolik)."
+    await callback.message.answer(summary)
+
+
+@router.callback_query(lambda c: c.data == "app_post:all")
+async def app_post_all(callback: CallbackQuery, bot: Bot):
+    await _send_apps_to_group(callback, bot, vacancy_id=None)
+
+
+@router.callback_query(lambda c: c.data.startswith("app_post:vac:"))
+async def app_post_one_vacancy(callback: CallbackQuery, bot: Bot):
+    vid = int(callback.data.split(":")[2])
+    await _send_apps_to_group(callback, bot, vacancy_id=vid)
 
 
 @router.callback_query(lambda c: c.data.startswith("get_cv:"))

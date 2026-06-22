@@ -203,6 +203,20 @@ def vacancy_post_menu_keyboard(vacancies):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def applications_post_menu_keyboard(vacancies):
+    """Arizalarni guruhga yuborish: Barcha yoki ma'lum vakansiya bo'yicha."""
+    buttons = [
+        [InlineKeyboardButton(text="📁 Barcha arizalar", callback_data="app_post:all")]
+    ]
+    for v in vacancies:
+        buttons.append([InlineKeyboardButton(
+            text=f"💼 {v.title}",
+            callback_data=f"app_post:vac:{v.id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:applications")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def admin_vacancy_detail_keyboard(vacancy_id: int, active: bool):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
