@@ -14,7 +14,7 @@ from app.database.crud import (
 from app.keyboards.inline import (
     admin_main_keyboard, admin_settings_keyboard,
     admin_vacancies_keyboard, admin_vacancy_detail_keyboard, vacancy_delete_confirm_keyboard,
-    vacancy_edit_field_keyboard,
+    vacancy_edit_field_keyboard, vacancy_post_menu_keyboard,
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
 )
@@ -200,6 +200,105 @@ async def vacancy_delete_confirm(callback: CallbackQuery):
     title = v.title if v else vacancy_id
     await delete_vacancy(vacancy_id)
     await callback.message.answer(f"🗑 <b>{title}</b> o'chirildi.", parse_mode="HTML")
+    await callback.answer()
+
+
+# ── Vakansiyani guruhga yuborish ──────────────────────────────────────────
+
+def _vacancy_post_text(v) -> str:
+    return (
+        f"💼 <b>{v.title}</b>\n\n"
+        f"📋 <b>Talablar:</b>\n{v.requirements or '—'}\n\n"
+        f"💰 <b>Ish haqi:</b> {v.salary or 'Kelishiladi'}"
+    )
+
+
+@router.callback_query(lambda c: c.data == "vac_post:menu")
+async def vacancy_post_menu(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vacancies = await get_all_vacancies()
+    active = [v for v in vacancies if v.active]
+    if not active:
+        await callback.answer("Faol vakansiya yo'q.", show_alert=True)
+        return
+    await callback.message.answer(
+        "📢 <b>Vakansiyalarni guruhga yuborish</b>\n\n"
+        "Barchasini yoki bittasini tanlang:",
+        parse_mode="HTML",
+        reply_markup=vacancy_post_menu_keyboard(vacancies)
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "vac_post:all")
+async def vacancy_post_all(callback: CallbackQuery, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    group_id_str = await get_setting("apps_group_id")
+    if not group_id_str:
+        await callback.answer(
+            "❌ Avval Sozlamalar → Arizalar guruhi ni o'rnating.",
+            show_alert=True
+        )
+        return
+    try:
+        group_id = int(group_id_str)
+    except ValueError:
+        await callback.answer("❌ Guruh ID xato.", show_alert=True)
+        return
+
+    vacancies = [v for v in await get_all_vacancies() if v.active]
+    if not vacancies:
+        await callback.answer("Faol vakansiya yo'q.", show_alert=True)
+        return
+
+    await callback.answer("Yuborilmoqda…")
+    sent = 0
+    for v in vacancies:
+        try:
+            await bot.send_message(group_id, _vacancy_post_text(v), parse_mode="HTML")
+            sent += 1
+        except Exception:
+            pass
+    await callback.message.answer(
+        f"✅ {sent} ta vakansiya guruhga yuborildi."
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("vac_post:one:"))
+async def vacancy_post_one(callback: CallbackQuery, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    group_id_str = await get_setting("apps_group_id")
+    if not group_id_str:
+        await callback.answer(
+            "❌ Avval Sozlamalar → Arizalar guruhi ni o'rnating.",
+            show_alert=True
+        )
+        return
+    try:
+        group_id = int(group_id_str)
+    except ValueError:
+        await callback.answer("❌ Guruh ID xato.", show_alert=True)
+        return
+
+    vacancy_id = int(callback.data.split(":")[2])
+    v = await get_vacancy(vacancy_id)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    try:
+        await bot.send_message(group_id, _vacancy_post_text(v), parse_mode="HTML")
+        await callback.message.answer(f"✅ <b>{v.title}</b> guruhga yuborildi.", parse_mode="HTML")
+    except Exception as e:
+        await callback.message.answer(f"❌ Yuborilmadi: <code>{e}</code>", parse_mode="HTML")
     await callback.answer()
 
 

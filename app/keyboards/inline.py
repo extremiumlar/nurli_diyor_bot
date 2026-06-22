@@ -182,7 +182,24 @@ def admin_vacancies_keyboard(vacancies):
         for v in vacancies
     ]
     buttons.append([InlineKeyboardButton(text="➕ Yangi vakansiya", callback_data="admin_vacancy:new")])
+    buttons.append([InlineKeyboardButton(text="📢 Guruhga yuborish", callback_data="vac_post:menu")])
     buttons.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def vacancy_post_menu_keyboard(vacancies):
+    """Guruhga yuborish menyusi: Barcha faollar yoki bittasini tanlash."""
+    buttons = [
+        [InlineKeyboardButton(text="📁 Barcha faol vakansiyalar", callback_data="vac_post:all")]
+    ]
+    for v in vacancies:
+        if not v.active:
+            continue
+        buttons.append([InlineKeyboardButton(
+            text=f"💼 {v.title}",
+            callback_data=f"vac_post:one:{v.id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:vacancies")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
