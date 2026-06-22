@@ -570,9 +570,17 @@ async def app_delete_cancel(callback: CallbackQuery):
 # ── Arizalarni guruhga yuborish ────────────────────────────────────────────
 
 def _application_post_text(app, tartib: int, vacancy) -> str:
+    from datetime import datetime
     yosh = app.age or app.birth_year or '—'
+    created = '—'
+    if app.created_at:
+        if isinstance(app.created_at, datetime):
+            created = app.created_at.strftime("%Y-%m-%d %H:%M")
+        else:
+            created = str(app.created_at)
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
+        f"🕐 Topshirilgan: {created}\n"
         f"👤 {app.full_name or '—'}\n"
         f"📱 {app.phone or '—'}\n"
         f"🎂 Yosh: {yosh}\n"
@@ -661,10 +669,6 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
             sent += 1
         else:
             failed += 1
-
-        # 3 sek gap — guruh limitidan oldin proactiv
-        if idx < total - 1:
-            await asyncio.sleep(3)
 
     summary = f"✅ {sent}/{total} ta ariza guruhga yuborildi."
     if failed:
