@@ -274,16 +274,32 @@ async def admin_applications(callback: CallbackQuery):
     await callback.answer()
 
 
+APPS_PAGE_SIZE = 10
+
+
 @router.callback_query(lambda c: c.data.startswith("admin_apps:"))
 async def show_applications(callback: CallbackQuery, bot: Bot):
-    val = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    val = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 0
+
     vid = None if val == "all" else int(val)
     apps = await get_applications(vid)
     if not apps:
         await callback.message.answer("Arizalar yo'q.")
         await callback.answer()
         return
-    for app in apps:
+
+    total = len(apps)
+    total_pages = (total + APPS_PAGE_SIZE - 1) // APPS_PAGE_SIZE
+    page = max(0, min(page, total_pages - 1))
+    start = page * APPS_PAGE_SIZE
+    end = start + APPS_PAGE_SIZE
+    page_apps = apps[start:end]
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    for app in page_apps:
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
         yosh = app.age or app.birth_year or '—'
         text = (
@@ -298,7 +314,6 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
             f"🎓 Ma'lumot: {app.education or '—'}\n"
             f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
         )
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         row = []
         if app.photo_file_id:
             row.append(InlineKeyboardButton(text="📷 Rasm", callback_data=f"get_photo:{app.id}"))
@@ -306,6 +321,18 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
             row.append(InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}"))
         kb = InlineKeyboardMarkup(inline_keyboard=[row]) if row else None
         await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Oldingi", callback_data=f"admin_apps:{val}:{page - 1}"))
+    if end < total:
+        nav.append(InlineKeyboardButton(text="Keyingi ▶️", callback_data=f"admin_apps:{val}:{page + 1}"))
+
+    nav_kb = InlineKeyboardMarkup(inline_keyboard=[nav]) if nav else None
+    await callback.message.answer(
+        f"📄 Sahifa {page + 1}/{total_pages} — jami {total} ta ariza",
+        reply_markup=nav_kb
+    )
     await callback.answer()
 
 
