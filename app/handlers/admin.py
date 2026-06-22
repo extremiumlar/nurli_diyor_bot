@@ -7,7 +7,8 @@ from app.config import SUPER_ADMIN_ID
 from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
-    update_vacancy, get_applications, get_all_subscribed_users,
+    update_vacancy, get_applications, get_application, delete_application,
+    get_all_subscribed_users,
     get_setting, set_setting,
 )
 from app.keyboards.inline import (
@@ -17,7 +18,10 @@ from app.keyboards.inline import (
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
 )
-from app.states.admin_state import AddVacancyState, AddAdminState, EditAdminState, EditVacancyState, BotSettingsState
+from app.states.admin_state import (
+    AddVacancyState, AddAdminState, EditAdminState, EditVacancyState,
+    BotSettingsState, SearchApplicationState,
+)
 
 router = Router()
 
@@ -267,6 +271,7 @@ async def admin_applications(callback: CallbackQuery):
         for v in vacancies
     ]
     buttons.append([InlineKeyboardButton(text="📁 Barcha arizalar", callback_data="admin_apps:all")])
+    buttons.append([InlineKeyboardButton(text="🔍 Tartib bo'yicha qidirish", callback_data="admin_app_search")])
     await callback.message.answer(
         "Vakansiya tanlang:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -275,6 +280,36 @@ async def admin_applications(callback: CallbackQuery):
 
 
 APPS_PAGE_SIZE = 10
+
+
+def _app_card_text(app, tartib: int, vacancy) -> str:
+    yosh = app.age or app.birth_year or '—'
+    return (
+        f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
+        f"👤 {app.full_name}\n"
+        f"📱 {app.phone}\n"
+        f"🎂 Yosh: {yosh}\n"
+        f"📍 Qayerdan: {app.address or '—'}\n"
+        f"🗣 Tillar: {app.languages or '—'}\n"
+        f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
+        f"🏢 Ish tajribasi: {app.experience or '—'}\n"
+        f"🎓 Ma'lumot: {app.education or '—'}\n"
+        f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
+    )
+
+
+def _app_card_keyboard(app):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    rows = []
+    media_row = []
+    if app.photo_file_id:
+        media_row.append(InlineKeyboardButton(text="📷 Rasm", callback_data=f"get_photo:{app.id}"))
+    if app.cv_file_id:
+        media_row.append(InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}"))
+    if media_row:
+        rows.append(media_row)
+    rows.append([InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"app_del:{app.id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.callback_query(lambda c: c.data.startswith("admin_apps:"))
@@ -302,26 +337,11 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
     for idx_in_page, app in enumerate(page_apps):
         tartib = total - (start + idx_in_page)
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        yosh = app.age or app.birth_year or '—'
-        text = (
-            f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
-            f"👤 {app.full_name}\n"
-            f"📱 {app.phone}\n"
-            f"🎂 Yosh: {yosh}\n"
-            f"📍 Qayerdan: {app.address or '—'}\n"
-            f"🗣 Tillar: {app.languages or '—'}\n"
-            f"💼 Lavozim: {v.title if v else '—'}\n"
-            f"🏢 Ish tajribasi: {app.experience or '—'}\n"
-            f"🎓 Ma'lumot: {app.education or '—'}\n"
-            f"✨ Qo'shimcha ko'nikmalar: {app.additional_skills or '—'}"
+        await callback.message.answer(
+            _app_card_text(app, tartib, v),
+            parse_mode="HTML",
+            reply_markup=_app_card_keyboard(app)
         )
-        row = []
-        if app.photo_file_id:
-            row.append(InlineKeyboardButton(text="📷 Rasm", callback_data=f"get_photo:{app.id}"))
-        if app.cv_file_id:
-            row.append(InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}"))
-        kb = InlineKeyboardMarkup(inline_keyboard=[row]) if row else None
-        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
 
     nav = []
     if page > 0:
@@ -334,6 +354,95 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
         f"📄 Sahifa {page + 1}/{total_pages} — jami {total} ta ariza",
         reply_markup=nav_kb
     )
+    await callback.answer()
+
+
+# ── Ariza qidirish (tartib raqami bo'yicha) ───────────────────────────────
+
+@router.callback_query(lambda c: c.data == "admin_app_search")
+async def app_search_start(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    apps = await get_applications()
+    if not apps:
+        await callback.answer("Arizalar yo'q.", show_alert=True)
+        return
+    await state.set_state(SearchApplicationState.tartib)
+    await callback.message.answer(
+        f"🔍 Qidirilayotgan tartib raqamini kiriting (1 dan {len(apps)} gacha):"
+    )
+    await callback.answer()
+
+
+@router.message(SearchApplicationState.tartib)
+async def app_search_run(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("⚠️ Faqat raqam kiriting.")
+        return
+    tartib = int(text)
+    apps = await get_applications()
+    total = len(apps)
+    if not (1 <= tartib <= total):
+        await message.answer(f"⚠️ Tartib {1} dan {total} gacha bo'lishi kerak.")
+        return
+    await state.clear()
+    # desc-ordered: index = total - tartib
+    app = apps[total - tartib]
+    v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+    await message.answer(
+        _app_card_text(app, tartib, v),
+        parse_mode="HTML",
+        reply_markup=_app_card_keyboard(app)
+    )
+
+
+# ── Ariza o'chirish ────────────────────────────────────────────────────────
+
+@router.callback_query(lambda c: c.data.startswith("app_del:"))
+async def app_delete_ask(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    app_id = int(callback.data.split(":")[1])
+    app = await get_application(app_id)
+    if not app:
+        await callback.answer("Ariza topilmadi.", show_alert=True)
+        return
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"app_del_yes:{app_id}"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data=f"app_del_no:{app_id}"),
+    ]])
+    await callback.message.answer(
+        f"🗑 <b>Ariza #{app_id}</b> ({app.full_name}) ni o'chirishni tasdiqlaysizmi?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("app_del_yes:"))
+async def app_delete_confirm(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    app_id = int(callback.data.split(":")[1])
+    ok = await delete_application(app_id)
+    if ok:
+        await callback.message.edit_text(f"🗑 Ariza #{app_id} o'chirildi.")
+    else:
+        await callback.message.edit_text("⚠️ Ariza topilmadi.")
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("app_del_no:"))
+async def app_delete_cancel(callback: CallbackQuery):
+    await callback.message.edit_text("❌ O'chirish bekor qilindi.")
     await callback.answer()
 
 

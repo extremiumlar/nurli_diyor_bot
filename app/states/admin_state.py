@@ -49,3 +49,7 @@ class EditVacancyState(StatesGroup):
 class BotSettingsState(StatesGroup):
     channel   = State()
     instagram = State()
+
+
+class SearchApplicationState(StatesGroup):
+    tartib = State()

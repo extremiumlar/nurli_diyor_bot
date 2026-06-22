@@ -331,6 +331,21 @@ async def get_applications(vacancy_id: int | None = None):
         return result.scalars().all()
 
 
+async def get_application(app_id: int):
+    async with async_session() as session:
+        return await session.get(Application, app_id)
+
+
+async def delete_application(app_id: int):
+    async with async_session() as session:
+        app = await session.get(Application, app_id)
+        if app:
+            await session.delete(app)
+            await session.commit()
+            return True
+        return False
+
+
 # ── Admins ─────────────────────────────────────────────────────────────────
 
 async def get_admin(telegram_id: int):
