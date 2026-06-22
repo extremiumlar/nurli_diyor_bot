@@ -8,7 +8,7 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 
 from app.database.crud import (
-    get_active_vacancies, get_vacancy, create_application, get_admins_by_role,
+    get_active_vacancies, get_vacancy, create_application, get_all_admins,
     has_applied_today
 )
 from app.keyboards.reply import main_menu
@@ -400,7 +400,7 @@ async def _finalize_application(message: Message, state: FSMContext, bot: Bot):
         f"🎓 Ma'lumot: {data.get('education') or '—'}\n"
         f"✨ Qo'shimcha ko'nikmalar: {data.get('additional_skills') or '—'}"
     )
-    admins = await get_admins_by_role("hr_admin")
+    admins = await get_all_admins()
     from app.config import SUPER_ADMIN_ID
     from app.database.crud import get_setting
     notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
