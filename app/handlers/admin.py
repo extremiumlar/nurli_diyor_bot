@@ -402,7 +402,7 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
         return
 
     from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
     from aiogram.types import BufferedInputFile
     from io import BytesIO
     from datetime import datetime
@@ -425,9 +425,11 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     wb.remove(wb.active)
     used_names: set[str] = set()
 
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="305496", end_color="305496", fill_type="solid")
+    header_font = Font(bold=True, color="000000", size=12)
+    header_fill = PatternFill(start_color="FFE599", end_color="FFE599", fill_type="solid")
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_side   = Side(border_style="thin", color="000000")
+    header_border = Border(top=thin_side, bottom=thin_side, left=thin_side, right=thin_side)
 
     ordered_vids = [v.id for v in vacancies if v.id in grouped] + [vid for vid in grouped if vid not in vacancy_map]
 
@@ -446,6 +448,7 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_align
+            cell.border = header_border
 
         for tartib, a in enumerate(rows, start=1):
             yosh = a.age or a.birth_year or ""
