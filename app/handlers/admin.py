@@ -299,11 +299,12 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-    for app in page_apps:
+    for idx_in_page, app in enumerate(page_apps):
+        tartib = total - (start + idx_in_page)
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
         yosh = app.age or app.birth_year or '—'
         text = (
-            f"📁 <b>Ariza #{app.id}</b>\n"
+            f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
             f"👤 {app.full_name}\n"
             f"📱 {app.phone}\n"
             f"🎂 Yosh: {yosh}\n"
@@ -371,7 +372,7 @@ async def get_photo(callback: CallbackQuery, bot: Bot):
 # ── Excel eksport ──────────────────────────────────────────────────────────
 
 EXCEL_HEADERS = [
-    "#", "Topshirilgan vaqt", "Ism familiya", "Telefon", "Yosh",
+    "Tartib", "Ariza №", "Topshirilgan vaqt", "Ism familiya", "Telefon", "Yosh",
     "Qayerdan", "Tillar", "Lavozim", "Ish tajribasi", "Ma'lumot",
     "Qo'shimcha ko'nikmalar", "Rasm", "CV",
 ]
@@ -431,7 +432,10 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     ordered_vids = [v.id for v in vacancies if v.id in grouped] + [vid for vid in grouped if vid not in vacancy_map]
 
     for vid in ordered_vids:
-        rows = grouped[vid]
+        rows = sorted(
+            grouped[vid],
+            key=lambda a: a.created_at or datetime.min
+        )
         v = vacancy_map.get(vid) if vid else None
         sheet_name = _safe_sheet_name(v.title if v else "Belgilanmagan", used_names)
         ws = wb.create_sheet(title=sheet_name)
@@ -443,12 +447,13 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
             cell.fill = header_fill
             cell.alignment = header_align
 
-        for a in rows:
+        for tartib, a in enumerate(rows, start=1):
             yosh = a.age or a.birth_year or ""
             created = ""
             if a.created_at:
                 created = a.created_at.strftime("%Y-%m-%d %H:%M") if isinstance(a.created_at, datetime) else str(a.created_at)
             ws.append([
+                tartib,
                 a.id,
                 created,
                 a.full_name or "",
@@ -464,7 +469,7 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
                 "Bor" if a.cv_file_id else "—",
             ])
 
-        widths = [6, 18, 26, 16, 6, 22, 22, 22, 30, 18, 30, 8, 8]
+        widths = [8, 10, 18, 26, 16, 6, 22, 22, 22, 30, 18, 30, 8, 8]
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
         ws.row_dimensions[1].height = 30
