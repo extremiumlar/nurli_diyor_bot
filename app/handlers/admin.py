@@ -629,21 +629,40 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
     sent = 0
     failed = 0
     import asyncio
+    from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError
+
+    async def _send_one(app, text):
+        if app.photo_file_id:
+            await bot.send_photo(group_id, photo=app.photo_file_id,
+                                 caption=text, parse_mode="HTML")
+        else:
+            await bot.send_message(group_id, text, parse_mode="HTML")
 
     for idx, app in enumerate(apps):
         tartib = total - idx
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
         text = _application_post_text(app, tartib, v)
-        try:
-            if app.photo_file_id:
-                await bot.send_photo(group_id, photo=app.photo_file_id,
-                                     caption=text, parse_mode="HTML")
-            else:
-                await bot.send_message(group_id, text, parse_mode="HTML")
+
+        ok = False
+        for attempt in range(3):
+            try:
+                await _send_one(app, text)
+                ok = True
+                break
+            except TelegramRetryAfter as e:
+                # Telegram aytgan vaqt + 1 sek qo'shimcha kutamiz, keyin qayta urinamiz
+                await asyncio.sleep(e.retry_after + 1)
+            except TelegramAPIError:
+                break  # boshqa API xato — qayta urinmaymiz
+            except Exception:
+                break
+
+        if ok:
             sent += 1
-        except Exception:
+        else:
             failed += 1
-        # Telegram rate-limit (group): ~20 msg/min — 3s gap
+
+        # 3 sek gap — guruh limitidan oldin proactiv
         if idx < total - 1:
             await asyncio.sleep(3)
 
