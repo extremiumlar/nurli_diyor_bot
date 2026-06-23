@@ -401,15 +401,28 @@ def _app_card_text(app, tartib: int, vacancy) -> str:
 def _app_card_keyboard(app):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     rows = []
-    media_row = []
-    if app.photo_file_id:
-        media_row.append(InlineKeyboardButton(text="📷 Rasm", callback_data=f"get_photo:{app.id}"))
     if app.cv_file_id:
-        media_row.append(InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}"))
-    if media_row:
-        rows.append(media_row)
+        rows.append([InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}")])
     rows.append([InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"app_del:{app.id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _send_app_card(target_message: Message, bot: Bot, app, tartib: int, vacancy):
+    """Arizani rasm bilan (agar bor bo'lsa) yoki matn bilan yuboradi."""
+    text = _app_card_text(app, tartib, vacancy)
+    kb = _app_card_keyboard(app)
+    if app.photo_file_id:
+        try:
+            await target_message.answer_photo(
+                photo=app.photo_file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=kb
+            )
+            return
+        except Exception:
+            pass
+    await target_message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.callback_query(lambda c: c.data.startswith("admin_apps:"))
@@ -437,11 +450,7 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
     for idx_in_page, app in enumerate(page_apps):
         tartib = total - (start + idx_in_page)
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        await callback.message.answer(
-            _app_card_text(app, tartib, v),
-            parse_mode="HTML",
-            reply_markup=_app_card_keyboard(app)
-        )
+        await _send_app_card(callback.message, bot, app, tartib, v)
 
     nav = []
     if page > 0:
@@ -479,7 +488,7 @@ async def app_search_start(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(SearchApplicationState.tartib)
-async def app_search_run(message: Message, state: FSMContext):
+async def app_search_run(message: Message, state: FSMContext, bot: Bot):
     text = message.text.strip()
     apps = await get_applications()
     total = len(apps)
@@ -492,11 +501,7 @@ async def app_search_run(message: Message, state: FSMContext):
             return
         app = apps[total - tartib]
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        await message.answer(
-            _app_card_text(app, tartib, v),
-            parse_mode="HTML",
-            reply_markup=_app_card_keyboard(app)
-        )
+        await _send_app_card(message, bot, app, tartib, v)
         return
 
     query = text.lower()
@@ -511,11 +516,7 @@ async def app_search_run(message: Message, state: FSMContext):
     for idx, app in matches[:20]:
         tartib = total - idx
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        await message.answer(
-            _app_card_text(app, tartib, v),
-            parse_mode="HTML",
-            reply_markup=_app_card_keyboard(app)
-        )
+        await _send_app_card(message, bot, app, tartib, v)
     if len(matches) > 20:
         await message.answer(f"… va yana {len(matches) - 20} ta natija. Aniqroq qidiring.")
 
