@@ -387,7 +387,7 @@ def _app_card_text(app, tartib: int, vacancy, username: str | None = None) -> st
     if username:
         tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
     else:
-        tg_link = f'<a href="tg://user?id={app.user_id}">Telegram</a>'
+        tg_link = f'ID: <code>{app.user_id}</code>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
         f"👤 {app.full_name}\n"
@@ -589,7 +589,7 @@ def _application_post_text(app, tartib: int, vacancy, username: str | None = Non
     if username:
         tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
     else:
-        tg_link = f'<a href="tg://user?id={app.user_id}">Telegram</a>'
+        tg_link = f'ID: <code>{app.user_id}</code>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
         f"🕐 Topshirilgan: {created}\n"
