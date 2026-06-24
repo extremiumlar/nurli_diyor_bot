@@ -384,15 +384,12 @@ APPS_PAGE_SIZE = 10
 
 def _app_card_text(app, tartib: int, vacancy, username: str | None = None) -> str:
     yosh = app.age or app.birth_year or '—'
-    if username:
-        tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
-    else:
-        tg_link = f'ID: <code>{app.user_id}</code>'
+    name = app.full_name or '—'
+    name_link = f'<a href="tg://user?id={app.user_id}">{name}</a>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
-        f"👤 {app.full_name}\n"
+        f"👤 {name_link}\n"
         f"📱 {app.phone}\n"
-        f"💬 Telegram: {tg_link}\n"
         f"🎂 Yosh: {yosh}\n"
         f"📍 Qayerdan: {app.address or '—'}\n"
         f"🗣 Tillar: {app.languages or '—'}\n"
@@ -636,16 +633,13 @@ def _application_post_text(app, tartib: int, vacancy, username: str | None = Non
             created = app.created_at.strftime("%Y-%m-%d %H:%M")
         else:
             created = str(app.created_at)
-    if username:
-        tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
-    else:
-        tg_link = f'ID: <code>{app.user_id}</code>'
+    name = app.full_name or '—'
+    name_link = f'<a href="tg://user?id={app.user_id}">{name}</a>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
         f"🕐 Topshirilgan: {created}\n"
-        f"👤 {app.full_name or '—'}\n"
+        f"👤 {name_link}\n"
         f"📱 {app.phone or '—'}\n"
-        f"💬 Telegram: {tg_link}\n"
         f"🎂 Yosh: {yosh}\n"
         f"📍 Qayerdan: {app.address or '—'}\n"
         f"🗣 Tillar: {app.languages or '—'}\n"
