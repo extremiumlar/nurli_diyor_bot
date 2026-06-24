@@ -20,7 +20,7 @@ from app.keyboards.inline import (
 )
 from app.states.admin_state import (
     AddVacancyState, AddAdminState, EditAdminState, EditVacancyState,
-    BotSettingsState, SearchApplicationState,
+    BotSettingsState, SearchApplicationState, ContactApplicantState,
 )
 
 router = Router()
@@ -403,11 +403,13 @@ def _app_card_text(app, tartib: int, vacancy, username: str | None = None) -> st
     )
 
 
-def _app_card_keyboard(app):
+def _app_card_keyboard(app, has_username: bool = False):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     rows = []
     if app.cv_file_id:
         rows.append([InlineKeyboardButton(text="📄 CV", callback_data=f"get_cv:{app.id}")])
+    if has_username:
+        rows.append([InlineKeyboardButton(text="📩 Xabar yuborish", callback_data=f"app_contact:{app.id}")])
     rows.append([InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"app_del:{app.id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -417,7 +419,7 @@ async def _send_app_card(target_message: Message, bot: Bot, app, tartib: int, va
     user = await get_user(app.user_id)
     username = user.username if user else None
     text = _app_card_text(app, tartib, vacancy, username)
-    kb = _app_card_keyboard(app)
+    kb = _app_card_keyboard(app, has_username=bool(username))
     if app.photo_file_id:
         try:
             await target_message.answer_photo(
@@ -526,6 +528,54 @@ async def app_search_run(message: Message, state: FSMContext, bot: Bot):
         await _send_app_card(message, bot, app, tartib, v)
     if len(matches) > 20:
         await message.answer(f"… va yana {len(matches) - 20} ta natija. Aniqroq qidiring.")
+
+
+# ── Ariza egasiga xabar yuborish ──────────────────────────────────────────
+
+@router.callback_query(lambda c: c.data.startswith("app_contact:"))
+async def app_contact_start(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    app_id = int(callback.data.split(":")[1])
+    app = await get_application(app_id)
+    if not app:
+        await callback.answer("Ariza topilmadi.", show_alert=True)
+        return
+    user = await get_user(app.user_id)
+    if not user or not user.username:
+        await callback.answer("Bu foydalanuvchida username yo'q.", show_alert=True)
+        return
+    await state.set_state(ContactApplicantState.message)
+    await state.update_data(app_id=app_id, applicant_id=app.user_id, username=user.username)
+    await callback.message.answer(
+        f"✏️ <b>@{user.username}</b> ga yuboriladigan xabarni yozing:\n\n"
+        f"(Bekor qilish uchun /cancel)",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(ContactApplicantState.message)
+async def app_contact_send(message: Message, state: FSMContext, bot: Bot):
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("Bekor qilindi.")
+        return
+    data = await state.get_data()
+    applicant_id = data["applicant_id"]
+    username = data["username"]
+    await state.clear()
+    try:
+        await bot.send_message(
+            applicant_id,
+            f"📩 <b>Nuriddin Building HR bo'limidan xabar:</b>\n\n{message.text}",
+            parse_mode="HTML"
+        )
+        await message.answer(f"✅ Xabar <b>@{username}</b> ga yuborildi.", parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Xabar yuborib bo'lmadi: {e}")
 
 
 # ── Ariza o'chirish ────────────────────────────────────────────────────────

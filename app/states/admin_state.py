@@ -53,3 +53,7 @@ class BotSettingsState(StatesGroup):
 
 class SearchApplicationState(StatesGroup):
     tartib = State()
+
+
+class ContactApplicantState(StatesGroup):
+    message = State()
