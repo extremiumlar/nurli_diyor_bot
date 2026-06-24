@@ -659,15 +659,15 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
                 ok = True
                 break
             except TelegramRetryAfter as e:
-                # Telegram aytgan vaqt + 1 sek qo'shimcha kutamiz, keyin qayta urinamiz
                 await asyncio.sleep(e.retry_after + 1)
             except TelegramAPIError:
-                break  # boshqa API xato — qayta urinmaymiz
+                break
             except Exception:
                 break
 
         if ok:
             sent += 1
+            await asyncio.sleep(1.5)  # Telegram: bir guruhga max 20 msg/min
         else:
             failed += 1
 
