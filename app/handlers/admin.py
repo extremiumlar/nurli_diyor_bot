@@ -382,12 +382,17 @@ async def admin_applications(callback: CallbackQuery):
 APPS_PAGE_SIZE = 10
 
 
-def _app_card_text(app, tartib: int, vacancy) -> str:
+def _app_card_text(app, tartib: int, vacancy, username: str | None = None) -> str:
     yosh = app.age or app.birth_year or '—'
+    if username:
+        tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
+    else:
+        tg_link = f'<a href="tg://user?id={app.user_id}">Telegram</a>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
         f"👤 {app.full_name}\n"
         f"📱 {app.phone}\n"
+        f"💬 Telegram: {tg_link}\n"
         f"🎂 Yosh: {yosh}\n"
         f"📍 Qayerdan: {app.address or '—'}\n"
         f"🗣 Tillar: {app.languages or '—'}\n"
@@ -409,7 +414,9 @@ def _app_card_keyboard(app):
 
 async def _send_app_card(target_message: Message, bot: Bot, app, tartib: int, vacancy):
     """Arizani rasm bilan (agar bor bo'lsa) yoki matn bilan yuboradi."""
-    text = _app_card_text(app, tartib, vacancy)
+    user = await get_user(app.user_id)
+    username = user.username if user else None
+    text = _app_card_text(app, tartib, vacancy, username)
     kb = _app_card_keyboard(app)
     if app.photo_file_id:
         try:
