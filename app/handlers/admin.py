@@ -8,7 +8,7 @@ from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
     update_vacancy, get_applications, get_application, delete_application,
-    get_all_subscribed_users,
+    get_all_subscribed_users, get_user,
     get_setting, set_setting,
 )
 from app.keyboards.inline import (
@@ -570,7 +570,7 @@ async def app_delete_cancel(callback: CallbackQuery):
 
 # ── Arizalarni guruhga yuborish ────────────────────────────────────────────
 
-def _application_post_text(app, tartib: int, vacancy) -> str:
+def _application_post_text(app, tartib: int, vacancy, username: str | None = None) -> str:
     from datetime import datetime
     yosh = app.age or app.birth_year or '—'
     created = '—'
@@ -579,11 +579,16 @@ def _application_post_text(app, tartib: int, vacancy) -> str:
             created = app.created_at.strftime("%Y-%m-%d %H:%M")
         else:
             created = str(app.created_at)
+    if username:
+        tg_link = f'<a href="https://t.me/{username}">@{username}</a>'
+    else:
+        tg_link = f'<a href="tg://user?id={app.user_id}">Telegram</a>'
     return (
         f"📁 <b>Ariza #{app.id}</b> | 🔢 Tartib: <b>{tartib}</b>\n"
         f"🕐 Topshirilgan: {created}\n"
         f"👤 {app.full_name or '—'}\n"
         f"📱 {app.phone or '—'}\n"
+        f"💬 Telegram: {tg_link}\n"
         f"🎂 Yosh: {yosh}\n"
         f"📍 Qayerdan: {app.address or '—'}\n"
         f"🗣 Tillar: {app.languages or '—'}\n"
@@ -650,7 +655,9 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
     for idx, app in enumerate(apps):
         tartib = total - idx
         v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        text = _application_post_text(app, tartib, v)
+        user = await get_user(app.user_id)
+        username = user.username if user else None
+        text = _application_post_text(app, tartib, v, username)
 
         ok = False
         for attempt in range(3):
