@@ -6,6 +6,8 @@ from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
+from app.config import CHANNEL_BOT_OWNER_ID
+
 router = Router()
 
 
@@ -38,18 +40,10 @@ async def _fetch_posts(channel: str, limit: int = 10) -> list[str]:
     return texts[-limit:]
 
 
-def _owner_only(handler):
-    async def wrapper(message: Message, **kwargs):
-        from app.config import CHANNEL_BOT_OWNER_ID
-        if message.from_user.id != CHANNEL_BOT_OWNER_ID:
-            return
-        return await handler(message, **kwargs)
-    return wrapper
-
-
 @router.message(CommandStart())
-@_owner_only
 async def cmd_start(message: Message):
+    if message.from_user.id != CHANNEL_BOT_OWNER_ID:
+        return
     await message.answer(
         "Kanal linkini yuboring.\n"
         "Masalan: <code>https://t.me/channelname</code>\n\n"
@@ -59,8 +53,9 @@ async def cmd_start(message: Message):
 
 
 @router.message()
-@_owner_only
 async def handle_link(message: Message):
+    if message.from_user.id != CHANNEL_BOT_OWNER_ID:
+        return
     channel = _parse_channel(message.text or "")
     if not channel:
         await message.answer("❌ Kanal linki noto'g'ri. Masalan: https://t.me/channelname")

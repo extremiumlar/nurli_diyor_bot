@@ -1,16 +1,19 @@
 """
-Ikkinchi botni webhookga ulash uchun bir marta ishga tushiring:
+Ikkinchi botni (channel_reader) webhookga ulash uchun bir marta ishga tushiring:
   python set_webhook2.py
 """
 import asyncio
-from nb_adminsbot.config import settings
 from aiogram import Bot
+from app.config import CHANNEL_BOT_TOKEN
 
 WEBHOOK_URL = "https://bulutliiqtisodiyot.uz/webhook2"
 
 
 async def main():
-    bot = Bot(token=settings.bot_token)
+    if not CHANNEL_BOT_TOKEN:
+        print("CHANNEL_BOT_TOKEN .env da topilmadi")
+        return
+    bot = Bot(token=CHANNEL_BOT_TOKEN)
     await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
     info = await bot.get_webhook_info()
     print(f"Webhook ulandi: {info.url}")

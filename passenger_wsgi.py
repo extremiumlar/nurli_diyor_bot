@@ -15,7 +15,7 @@ from app.handlers.start import router as start_router
 from app.handlers.jobseeker import router as jobseeker_router
 from app.handlers.admin import router as admin_router
 from app.middleware.subscription import SubscriptionMiddleware
-from channel_bot.handlers import router as channel_router
+from channel_reader.handlers import router as channel_router
 
 # ── Event loop — bir marta yaratiladi ─────────────────────────────────────
 loop = asyncio.new_event_loop()
