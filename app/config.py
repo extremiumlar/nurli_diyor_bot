@@ -11,3 +11,7 @@ SUPER_ADMIN_ID = int(os.getenv("SUPER_ADMIN_ID"))
 CHANNEL_ID     = os.getenv("CHANNEL_ID")          # "-100xxxxxxxxx"
 CHANNEL_LINK   = os.getenv("CHANNEL_LINK")         # "https://t.me/kanal_nomi"
 INSTAGRAM_URL  = os.getenv("INSTAGRAM_URL")        # "https://instagram.com/sahifa"
+
+# Channel reader bot
+CHANNEL_BOT_TOKEN    = os.getenv("CHANNEL_BOT_TOKEN", "")
+CHANNEL_BOT_OWNER_ID = int(os.getenv("CHANNEL_BOT_OWNER_ID", "0"))
