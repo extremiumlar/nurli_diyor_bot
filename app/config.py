@@ -18,3 +18,8 @@ CHANNEL_BOT_OWNER_ID = int(os.getenv("CHANNEL_BOT_OWNER_ID", "0"))
 
 # Gemini API (narkotik kontent filter uchun)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Userbot (Telethon) — @funstat va boshqa botlarga so'rov yuborish uchun
+TELEGRAM_API_ID        = int(os.getenv("TELEGRAM_API_ID", "0") or 0)
+TELEGRAM_API_HASH      = os.getenv("TELEGRAM_API_HASH", "")
+TELEGRAM_USERBOT_PHONE = os.getenv("TELEGRAM_USERBOT_PHONE", "")

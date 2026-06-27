@@ -5,11 +5,12 @@ import re
 import aiohttp
 from bs4 import BeautifulSoup
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message
 
 from app.config import CHANNEL_BOT_OWNER_ID
 from channel_reader import drug_filter
+from userbot import client as userbot_client
 
 router = Router()
 
@@ -144,9 +145,62 @@ async def cmd_start(message: Message):
         "📢 <b>Telegram kanal</b>: <code>https://t.me/channelname</code> "
         "(oxirgi 10 ta post)\n"
         "📸 <b>Instagram post/reel</b>: <code>https://instagram.com/p/XXX/</code>\n\n"
+        "🕵 <b>Foydalanuvchini tekshirish</b>: <code>/check @username</code>\n"
+        "  → @funstat'dan ma'lumot olib analiz qiladi\n\n"
         "Belgilar: ✅ toza, 🚫 shubhali",
         parse_mode="HTML"
     )
+
+
+@router.message(Command("check"))
+async def cmd_check(message: Message, command: CommandObject):
+    if message.from_user.id != CHANNEL_BOT_OWNER_ID:
+        return
+    args = (command.args or "").strip()
+    if not args:
+        await message.answer(
+            "Foydalanish: <code>/check @username</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(f"⏳ @funstat'dan <code>{html_lib.escape(args)}</code> "
+                         f"so'ralmoqda…", parse_mode="HTML")
+
+    try:
+        response = await userbot_client.query_funstat(args)
+    except Exception as e:
+        await message.answer(f"❌ Userbot xatolik: {html_lib.escape(str(e))}",
+                             parse_mode="HTML")
+        return
+
+    if not response:
+        await message.answer("@funstat javob bermadi (20s timeout).")
+        return
+
+    # Original javob
+    await message.answer(
+        f"<b>📥 @funstat javobi:</b>\n\n{html_lib.escape(response[:3500])}",
+        parse_mode="HTML"
+    )
+
+    # Gemini analiz
+    results = await drug_filter.analyze([response])
+    r = results[0]
+    if r.get("is_drug_related"):
+        words = r.get("flagged_words") or []
+        reason = r.get("reason", "")
+        confidence = r.get("confidence", "")
+        parts = [f"🚫 <b>Narkotik kontent topildi</b>"]
+        if confidence:
+            parts.append(f"Ishonch: {confidence}")
+        if words:
+            parts.append(f"Topilgan: {html_lib.escape(', '.join(words))}")
+        if reason:
+            parts.append(f"<i>{html_lib.escape(reason)}</i>")
+        await message.answer("\n".join(parts), parse_mode="HTML")
+    else:
+        await message.answer("✅ Narkotik kontent topilmadi.")
 
 
 @router.message()
