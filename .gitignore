@@ -7,3 +7,4 @@ __pycache__/
 session-*
 *.session
 *.session-journal
+userbot_settings.json

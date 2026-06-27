@@ -76,9 +76,9 @@ async def query_bot(bot_username: str, query_text: str, timeout: float = 20.0) -
             pass
 
 
-async def query_funstat(username: str, timeout: float = 20.0) -> str | None:
-    """@funstat ga username yuborib, javobini qaytaradi."""
-    username = username.strip().lstrip("@")
-    if not username:
-        return None
-    return await query_bot("@funstat", f"@{username}", timeout=timeout)
+async def query_target(query_text: str, timeout: float = 20.0) -> tuple[str, str | None]:
+    """Saqlangan target botga so'rov yuboradi. (target_bot, response) qaytaradi."""
+    from userbot.settings import get_target_bot
+    target = get_target_bot()
+    response = await query_bot(target, query_text, timeout=timeout)
+    return target, response

@@ -11,6 +11,7 @@ from aiogram.types import Message
 from app.config import CHANNEL_BOT_OWNER_ID
 from channel_reader import drug_filter
 from userbot import client as userbot_client
+from userbot import settings as userbot_settings
 
 router = Router()
 
@@ -146,8 +147,33 @@ async def cmd_start(message: Message):
         "(oxirgi 10 ta post)\n"
         "📸 <b>Instagram post/reel</b>: <code>https://instagram.com/p/XXX/</code>\n\n"
         "🕵 <b>Foydalanuvchini tekshirish</b>: <code>/check @username</code>\n"
-        "  → @funstat'dan ma'lumot olib analiz qiladi\n\n"
+        "  → target bot'dan ma'lumot olib analiz qiladi\n\n"
+        "⚙ <b>Target botni almashtirish</b>: <code>/setbot @newbot</code>\n"
+        f"  Hozirgi target: <code>{html_lib.escape(userbot_settings.get_target_bot())}</code>\n\n"
         "Belgilar: ✅ toza, 🚫 shubhali",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("setbot"))
+async def cmd_setbot(message: Message, command: CommandObject):
+    if message.from_user.id != CHANNEL_BOT_OWNER_ID:
+        return
+    args = (command.args or "").strip()
+    current = userbot_settings.get_target_bot()
+    if not args:
+        await message.answer(
+            f"Hozirgi target bot: <code>{html_lib.escape(current)}</code>\n\n"
+            f"Almashtirish: <code>/setbot @newbot</code>\n"
+            f"yoki: <code>/setbot https://t.me/newbot</code>",
+            parse_mode="HTML"
+        )
+        return
+    new_bot = userbot_settings.set_target_bot(args)
+    await message.answer(
+        f"✓ Target bot o'zgartirildi:\n"
+        f"  <s>{html_lib.escape(current)}</s>\n"
+        f"  → <code>{html_lib.escape(new_bot)}</code>",
         parse_mode="HTML"
     )
 
@@ -157,30 +183,35 @@ async def cmd_check(message: Message, command: CommandObject):
     if message.from_user.id != CHANNEL_BOT_OWNER_ID:
         return
     args = (command.args or "").strip()
+    target = userbot_settings.get_target_bot()
     if not args:
         await message.answer(
-            "Foydalanish: <code>/check @username</code>",
+            f"Foydalanish: <code>/check @username</code>\n"
+            f"Hozirgi target bot: <code>{html_lib.escape(target)}</code>",
             parse_mode="HTML"
         )
         return
 
-    await message.answer(f"⏳ @funstat'dan <code>{html_lib.escape(args)}</code> "
-                         f"so'ralmoqda…", parse_mode="HTML")
+    await message.answer(
+        f"⏳ <code>{html_lib.escape(target)}</code> dan "
+        f"<code>{html_lib.escape(args)}</code> so'ralmoqda…",
+        parse_mode="HTML"
+    )
 
     try:
-        response = await userbot_client.query_funstat(args)
+        target_used, response = await userbot_client.query_target(args)
     except Exception as e:
         await message.answer(f"❌ Userbot xatolik: {html_lib.escape(str(e))}",
                              parse_mode="HTML")
         return
 
     if not response:
-        await message.answer("@funstat javob bermadi (20s timeout).")
+        await message.answer(f"{html_lib.escape(target_used)} javob bermadi (20s timeout).")
         return
 
     # Original javob
     await message.answer(
-        f"<b>📥 @funstat javobi:</b>\n\n{html_lib.escape(response[:3500])}",
+        f"<b>📥 {html_lib.escape(target_used)} javobi:</b>\n\n{html_lib.escape(response[:3500])}",
         parse_mode="HTML"
     )
 
