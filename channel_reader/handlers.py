@@ -58,7 +58,7 @@ def _parse_channel(text: str) -> str | None:
     return None
 
 
-async def _fetch_posts(channel: str, limit: int = 10) -> list[str]:
+async def _fetch_posts(channel: str, limit: int = 5) -> list[str]:
     url = f"https://t.me/s/{channel}"
     headers = {"User-Agent": _BROWSER_UA}
     async with aiohttp.ClientSession() as session:
@@ -144,7 +144,7 @@ async def cmd_start(message: Message):
         "Gemini AI orqali tekshiraman:\n\n"
         "📢 <b>Telegram bitta post</b>: <code>https://t.me/channel/123</code>\n"
         "📢 <b>Telegram kanal</b>: <code>https://t.me/channelname</code> "
-        "(oxirgi 10 ta post)\n"
+        "(oxirgi 5 ta post)\n"
         "📸 <b>Instagram post/reel</b>: <code>https://instagram.com/p/XXX/</code>\n\n"
         "🕵 <b>Foydalanuvchini tekshirish</b>: <code>/check @username</code>\n"
         "  → target bot'dan ma'lumot olib analiz qiladi\n\n"
