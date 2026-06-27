@@ -9,6 +9,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from app.config import CHANNEL_BOT_OWNER_ID
+from channel_reader import drug_filter
 
 router = Router()
 
@@ -80,7 +81,7 @@ def _parse_instagram_post(text: str) -> str | None:
     return m.group(0) if m else None
 
 
-async def _fetch_instagram_caption(url: str) -> dict | None:
+async def _fetch_instagram_caption(url: str) -> str | None:
     headers = {"User-Agent": _FB_UA}
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -88,14 +89,47 @@ async def _fetch_instagram_caption(url: str) -> dict | None:
             if resp.status != 200:
                 return None
             html = await resp.text()
-
     soup = BeautifulSoup(html, "html.parser")
     og_title = soup.find("meta", property="og:title")
     og_desc = soup.find("meta", property="og:description")
-    return {
-        "title": og_title["content"] if og_title and og_title.get("content") else None,
-        "description": og_desc["content"] if og_desc and og_desc.get("content") else None,
-    }
+    title = og_title["content"] if og_title and og_title.get("content") else ""
+    desc = og_desc["content"] if og_desc and og_desc.get("content") else ""
+    combined = "\n\n".join(p for p in (title, desc) if p)
+    return combined or None
+
+
+# ── Format helpers ──────────────────────────────────────────────────────────
+def _format_verdict(text: str, result: dict, header: str | None = None) -> str:
+    is_drug = result.get("is_drug_related", False)
+    flag = "🚫" if is_drug else "✅"
+    confidence = result.get("confidence", "")
+    parts = []
+    if header:
+        parts.append(f"<b>{flag} {header}</b>")
+    else:
+        parts.append(f"<b>{flag}</b>")
+    parts.append(html_lib.escape(text)[:3500])
+    if is_drug:
+        words = result.get("flagged_words") or []
+        reason = result.get("reason", "")
+        warn = "\n⚠ <b>Narkotik kontent aniqlandi</b>"
+        if confidence:
+            warn += f" (ishonch: {confidence})"
+        parts.append(warn)
+        if words:
+            parts.append(f"<b>Topilgan:</b> {html_lib.escape(', '.join(words))}")
+        if reason:
+            parts.append(f"<i>{html_lib.escape(reason)}</i>")
+    return "\n".join(parts)
+
+
+def _summary(results: list[dict], total: int) -> str:
+    flagged = [i + 1 for i, r in enumerate(results) if r.get("is_drug_related")]
+    if not flagged:
+        return "✅ <b>Xulosa:</b> Narkotik kontent topilmadi."
+    nums = ", ".join(f"#{n}" for n in flagged)
+    return (f"🚫 <b>Xulosa:</b> {len(flagged)}/{total} ta postda narkotik kontent topildi.\n"
+            f"Post raqamlari: {nums}")
 
 
 # ── Handlers ────────────────────────────────────────────────────────────────
@@ -104,13 +138,13 @@ async def cmd_start(message: Message):
     if message.from_user.id != CHANNEL_BOT_OWNER_ID:
         return
     await message.answer(
-        "Quyidagilardan birini yuboring:\n\n"
+        "Quyidagilardan birini yuboring — matnda narkotik kontent borligini "
+        "Gemini AI orqali tekshiraman:\n\n"
         "📢 <b>Telegram bitta post</b>: <code>https://t.me/channel/123</code>\n"
-        "  → faqat o'sha postning matni\n\n"
-        "📢 <b>Telegram kanal</b>: <code>https://t.me/channelname</code>\n"
-        "  → oxirgi 10 ta post matni\n\n"
-        "📸 <b>Instagram post/reel</b>: <code>https://instagram.com/p/XXX/</code>\n"
-        "  → o'sha postning caption matni",
+        "📢 <b>Telegram kanal</b>: <code>https://t.me/channelname</code> "
+        "(oxirgi 10 ta post)\n"
+        "📸 <b>Instagram post/reel</b>: <code>https://instagram.com/p/XXX/</code>\n\n"
+        "Belgilar: ✅ toza, 🚫 shubhali",
         parse_mode="HTML"
     )
 
@@ -122,7 +156,7 @@ async def handle_link(message: Message):
 
     text = message.text or ""
 
-    # 1) Telegram bitta post (kanal nomi + post ID)
+    # 1) Telegram bitta post
     tg_post = _parse_tg_post(text)
     if tg_post:
         channel, post_id = tg_post
@@ -135,7 +169,11 @@ async def handle_link(message: Message):
         if not post_text:
             await message.answer("Post topilmadi yoki matnsiz (faqat media).")
             return
-        await message.answer(post_text)
+        results = await drug_filter.analyze([post_text])
+        await message.answer(
+            _format_verdict(post_text, results[0], header=f"@{channel}/{post_id}"),
+            parse_mode="HTML"
+        )
         return
 
     # 2) Instagram bitta post
@@ -143,22 +181,21 @@ async def handle_link(message: Message):
     if insta_url:
         await message.answer("⏳ Instagram postdan matn olinmoqda…")
         try:
-            data = await _fetch_instagram_caption(insta_url)
+            caption = await _fetch_instagram_caption(insta_url)
         except Exception as e:
             await message.answer(f"❌ Xatolik: {e}")
             return
-        if not data or (not data["title"] and not data["description"]):
+        if not caption:
             await message.answer(
-                "Postdan matn olib bo'lmadi. Post private bo'lishi yoki "
-                "Instagram bizni vaqtincha bloklagan bo'lishi mumkin."
+                "Postdan matn olib bo'lmadi. Post private yoki Instagram bizni "
+                "vaqtincha bloklagan bo'lishi mumkin."
             )
             return
-        parts = ["📸 <b>Instagram post</b>"]
-        if data["title"]:
-            parts.append(f"\n<b>Sarlavha:</b>\n{html_lib.escape(data['title'])}")
-        if data["description"]:
-            parts.append(f"\n<b>Tavsif:</b>\n{html_lib.escape(data['description'])}")
-        await message.answer("\n".join(parts), parse_mode="HTML")
+        results = await drug_filter.analyze([caption])
+        await message.answer(
+            _format_verdict(caption, results[0], header="Instagram post"),
+            parse_mode="HTML"
+        )
         return
 
     # 3) Telegram kanal (oxirgi 10 ta post)
@@ -184,7 +221,14 @@ async def handle_link(message: Message):
         await message.answer("Postlar topilmadi. Kanal private yoki mavjud emas.")
         return
 
-    await message.answer(f"📋 <b>Oxirgi {len(posts)} ta post:</b>", parse_mode="HTML")
-    for i, ttext in enumerate(posts, 1):
-        await message.answer(f"<b>#{i}</b>\n{ttext}", parse_mode="HTML")
+    await message.answer(f"🔎 <b>{len(posts)} ta post analiz qilinmoqda…</b>", parse_mode="HTML")
+    results = await drug_filter.analyze(posts)
+
+    for i, (ptext, result) in enumerate(zip(posts, results), 1):
+        await message.answer(
+            _format_verdict(ptext, result, header=f"#{i}"),
+            parse_mode="HTML"
+        )
         await asyncio.sleep(0.3)
+
+    await message.answer(_summary(results, len(posts)), parse_mode="HTML")

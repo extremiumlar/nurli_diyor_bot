@@ -15,3 +15,6 @@ INSTAGRAM_URL  = os.getenv("INSTAGRAM_URL")        # "https://instagram.com/sahi
 # Channel reader bot
 CHANNEL_BOT_TOKEN    = os.getenv("CHANNEL_BOT_TOKEN", "")
 CHANNEL_BOT_OWNER_ID = int(os.getenv("CHANNEL_BOT_OWNER_ID", "0"))
+
+# Gemini API (narkotik kontent filter uchun)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
