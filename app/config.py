@@ -15,3 +15,7 @@ INSTAGRAM_URL  = os.getenv("INSTAGRAM_URL")        # "https://instagram.com/sahi
 # Channel reader bot
 CHANNEL_BOT_TOKEN    = os.getenv("CHANNEL_BOT_TOKEN", "")
 CHANNEL_BOT_OWNER_ID = int(os.getenv("CHANNEL_BOT_OWNER_ID", "0"))
+
+# Instagram (instaloader login)
+INSTAGRAM_USER = os.getenv("INSTAGRAM_USER", "")
+INSTAGRAM_PASS = os.getenv("INSTAGRAM_PASS", "")
