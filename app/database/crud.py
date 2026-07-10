@@ -57,6 +57,17 @@ async def get_users_by_role(role: str):
         return result.scalars().all()
 
 
+async def get_applicant_ids_by_vacancies(vacancy_ids: list[int]) -> set[int]:
+    """Berilgan vakansiyalarga ariza topshirgan foydalanuvchilarning ID lari (unikal)."""
+    if not vacancy_ids:
+        return set()
+    async with async_session() as session:
+        result = await session.execute(
+            select(Application.user_id).where(Application.vacancy_id.in_(vacancy_ids))
+        )
+        return set(result.scalars().all())
+
+
 async def set_user_unsubscribed(user_id: int):
     async with async_session() as session:
         user = await session.get(User, user_id)

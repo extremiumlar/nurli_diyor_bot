@@ -32,6 +32,10 @@ class BroadcastState(StatesGroup):
     confirm = State()
 
 
+class AnnounceState(StatesGroup):
+    picking = State()   # vakansiya bo'yicha filtr uchun ko'p tanlash
+
+
 class AddAdminState(StatesGroup):
     telegram_id = State()   # admin Telegram ID si
     role        = State()   # rol tanlash

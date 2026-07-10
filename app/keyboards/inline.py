@@ -124,6 +124,7 @@ def admin_settings_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📡 Kanal o'rnatish",     callback_data="settings:channel")],
         [InlineKeyboardButton(text="📸 Instagram o'rnatish", callback_data="settings:instagram")],
         [InlineKeyboardButton(text="📥 Arizalar guruhi",     callback_data="settings:apps_group")],
+        [InlineKeyboardButton(text="🧪 Guruhni tekshirish",  callback_data="settings:test_group")],
         [InlineKeyboardButton(text="🗑 Kanalni o'chirish",   callback_data="settings:clear_channel")],
         [InlineKeyboardButton(text="🗑 Guruhni o'chirish",   callback_data="settings:clear_group")],
         [InlineKeyboardButton(text="◀️ Ortga",               callback_data="admin:back")],
@@ -224,10 +225,41 @@ def admin_vacancy_detail_keyboard(vacancy_id: int, active: bool):
             callback_data=f"admin_vacancy_toggle:{vacancy_id}"
         )],
         [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"admin_vacancy_edit:{vacancy_id}")],
+        [InlineKeyboardButton(text="📣 Foydalanuvchilarga e'lon", callback_data=f"vann:menu:{vacancy_id}")],
         [InlineKeyboardButton(text="📁 Arizalar", callback_data=f"admin_apps:{vacancy_id}")],
         [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin_vacancy_delete:{vacancy_id}")],
         [InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:vacancies")]
     ])
+
+
+def announce_menu_keyboard(vacancy_id: int):
+    """Vakansiyani foydalanuvchilarga e'lon qilish — auditoriya tanlash."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Barcha start bosganlar", callback_data=f"vann:all:{vacancy_id}")],
+        [InlineKeyboardButton(text="🎯 Vakansiyaga ariza berganlar", callback_data=f"vann:pick:{vacancy_id}")],
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{vacancy_id}")],
+    ])
+
+
+def announce_confirm_all_keyboard(vacancy_id: int, count: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"✅ Ha, {count} kishiga yuborish", callback_data=f"vann:doall:{vacancy_id}")],
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vann:menu:{vacancy_id}")],
+    ])
+
+
+def announce_pick_keyboard(vacancy_id: int, vacancies, picked: set):
+    """Filtr uchun vakansiyalarni ko'p tanlash klaviaturasi."""
+    buttons = []
+    for v in vacancies:
+        mark = "☑️" if v.id in picked else "⬜️"
+        buttons.append([InlineKeyboardButton(
+            text=f"{mark} {v.title}",
+            callback_data=f"vann:tog:{vacancy_id}:{v.id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="📤 Tanlanganlarga yuborish", callback_data=f"vann:send:{vacancy_id}")])
+    buttons.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vann:menu:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def vacancy_edit_field_keyboard(vacancy_id: int):

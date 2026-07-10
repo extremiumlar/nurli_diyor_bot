@@ -8,7 +8,7 @@ from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
     update_vacancy, get_applications, get_application, delete_application,
-    get_all_subscribed_users, get_user,
+    get_all_subscribed_users, get_user, get_applicant_ids_by_vacancies,
     get_setting, set_setting,
 )
 from app.keyboards.inline import (
@@ -17,10 +17,12 @@ from app.keyboards.inline import (
     vacancy_edit_field_keyboard, vacancy_post_menu_keyboard, applications_post_menu_keyboard,
     admin_list_keyboard, admin_detail_keyboard, admin_roles_keyboard,
     admin_remove_confirm_keyboard, ROLE_LABELS,
+    announce_menu_keyboard, announce_confirm_all_keyboard, announce_pick_keyboard,
 )
 from app.states.admin_state import (
     AddVacancyState, AddAdminState, EditAdminState, EditVacancyState,
     BotSettingsState, SearchApplicationState, ContactApplicantState,
+    AnnounceState,
 )
 
 router = Router()
@@ -258,16 +260,19 @@ async def vacancy_post_all(callback: CallbackQuery, bot: Bot):
         return
 
     await callback.answer("Yuborilmoqda…")
+    from app.utils import send_to_group
     sent = 0
+    last_err = None
     for v in vacancies:
-        try:
-            await bot.send_message(group_id, _vacancy_post_text(v), parse_mode="HTML")
+        ok, err = await send_to_group(bot, group_id, text=_vacancy_post_text(v))
+        if ok:
             sent += 1
-        except Exception:
-            pass
-    await callback.message.answer(
-        f"✅ {sent} ta vakansiya guruhga yuborildi."
-    )
+        else:
+            last_err = err
+    summary = f"✅ {sent} ta vakansiya guruhga yuborildi."
+    if last_err:
+        summary += f"\n⚠️ Ba'zilari yuborilmadi.\nXato: <code>{last_err}</code>"
+    await callback.message.answer(summary, parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data.startswith("vac_post:one:"))
@@ -294,12 +299,167 @@ async def vacancy_post_one(callback: CallbackQuery, bot: Bot):
     if not v:
         await callback.answer("Vakansiya topilmadi.", show_alert=True)
         return
-    try:
-        await bot.send_message(group_id, _vacancy_post_text(v), parse_mode="HTML")
+    from app.utils import send_to_group
+    ok, err = await send_to_group(bot, group_id, text=_vacancy_post_text(v))
+    if ok:
         await callback.message.answer(f"✅ <b>{v.title}</b> guruhga yuborildi.", parse_mode="HTML")
-    except Exception as e:
-        await callback.message.answer(f"❌ Yuborilmadi: <code>{e}</code>", parse_mode="HTML")
+    else:
+        await callback.message.answer(f"❌ Yuborilmadi: <code>{err}</code>", parse_mode="HTML")
     await callback.answer()
+
+
+# ── Vakansiyani foydalanuvchilarga e'lon qilish ────────────────────────────
+
+def _announce_text(v) -> str:
+    return (
+        f"📣 <b>Yangi vakansiya!</b>\n\n"
+        f"💼 <b>{v.title}</b>\n\n"
+        f"📋 <b>Talablar:</b>\n{v.requirements or '—'}\n\n"
+        f"💰 <b>Ish haqi:</b> {v.salary or 'Kelishiladi'}\n\n"
+        f"Qiziqsangiz, hoziroq ariza topshiring 👇"
+    )
+
+
+def _apply_button(vacancy_id: int):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="📝 Ariza topshirish", callback_data=f"apply_vacancy:{vacancy_id}")
+    ]])
+
+
+async def _run_announce(callback: CallbackQuery, bot: Bot, v, user_ids):
+    if not user_ids:
+        await callback.message.answer("⚠️ Bu filtrga mos foydalanuvchi topilmadi.")
+        await callback.answer()
+        return
+    await callback.answer(f"Yuborilmoqda… ({len(user_ids)} ta)")
+    from app.utils import broadcast_to_users
+    sent, failed = await broadcast_to_users(
+        bot, user_ids, _announce_text(v), reply_markup=_apply_button(v.id)
+    )
+    summary = f"✅ E'lon yuborildi: {sent}/{len(user_ids)} ta."
+    if failed:
+        summary += f"\n⚠️ {failed} tasiga yetib bormadi (botni bloklagan yoki chatni ochmagan)."
+    await callback.message.answer(summary)
+
+
+@router.callback_query(lambda c: c.data.startswith("vann:menu:"))
+async def announce_menu(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    await state.clear()
+    vid = int(callback.data.split(":")[2])
+    v = await get_vacancy(vid)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    await callback.message.answer(
+        f"📣 <b>{v.title}</b> — foydalanuvchilarga e'lon qilish\n\n"
+        f"Kimga yuboramiz?",
+        parse_mode="HTML",
+        reply_markup=announce_menu_keyboard(vid)
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vann:all:"))
+async def announce_all_confirm(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vid = int(callback.data.split(":")[2])
+    users = await get_all_subscribed_users()
+    count = len(users)
+    if count == 0:
+        await callback.answer("Foydalanuvchi yo'q.", show_alert=True)
+        return
+    await callback.message.answer(
+        f"👥 Botdagi <b>{count}</b> ta foydalanuvchiga e'lon yuboriladi.\nTasdiqlaysizmi?",
+        parse_mode="HTML",
+        reply_markup=announce_confirm_all_keyboard(vid, count)
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vann:doall:"))
+async def announce_do_all(callback: CallbackQuery, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vid = int(callback.data.split(":")[2])
+    v = await get_vacancy(vid)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    users = await get_all_subscribed_users()
+    user_ids = [u.id for u in users]
+    await _run_announce(callback, bot, v, user_ids)
+
+
+@router.callback_query(lambda c: c.data.startswith("vann:pick:"))
+async def announce_pick(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vid = int(callback.data.split(":")[2])
+    await state.set_state(AnnounceState.picking)
+    await state.update_data(ann_vid=vid, picked=[])
+    vacancies = await get_all_vacancies()
+    await callback.message.answer(
+        "🎯 <b>Filtr:</b> qaysi vakansiyalarga ariza berganlarga yuboramiz?\n"
+        "<i>Bir yoki bir nechtasini belgilang, so'ng \"Yuborish\" ni bosing.</i>",
+        parse_mode="HTML",
+        reply_markup=announce_pick_keyboard(vid, vacancies, set())
+    )
+    await callback.answer()
+
+
+@router.callback_query(AnnounceState.picking, lambda c: c.data.startswith("vann:tog:"))
+async def announce_toggle(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    vid = int(parts[2])
+    fid = int(parts[3])
+    data = await state.get_data()
+    picked = set(data.get("picked", []))
+    if fid in picked:
+        picked.discard(fid)
+    else:
+        picked.add(fid)
+    await state.update_data(picked=list(picked))
+    vacancies = await get_all_vacancies()
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=announce_pick_keyboard(vid, vacancies, picked)
+        )
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(AnnounceState.picking, lambda c: c.data.startswith("vann:send:"))
+async def announce_send_picked(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    vid = int(callback.data.split(":")[2])
+    data = await state.get_data()
+    picked = [int(x) for x in data.get("picked", [])]
+    await state.clear()
+    if not picked:
+        await callback.answer("Hech qanday vakansiya tanlanmadi.", show_alert=True)
+        return
+    v = await get_vacancy(vid)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    user_ids = list(await get_applicant_ids_by_vacancies(picked))
+    await _run_announce(callback, bot, v, user_ids)
 
 
 # ── Vakansiya tahrirlash ───────────────────────────────────────────────────
@@ -693,15 +853,9 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
     total = len(apps)
     sent = 0
     failed = 0
+    last_err = None
     import asyncio
-    from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError
-
-    async def _send_one(app, text):
-        if app.photo_file_id:
-            await bot.send_photo(group_id, photo=app.photo_file_id,
-                                 caption=text, parse_mode="HTML")
-        else:
-            await bot.send_message(group_id, text, parse_mode="HTML")
+    from app.utils import send_to_group
 
     for idx, app in enumerate(apps):
         tartib = total - idx
@@ -710,29 +864,18 @@ async def _send_apps_to_group(callback: CallbackQuery, bot: Bot, vacancy_id: int
         username = user.username if user else None
         text = _application_post_text(app, tartib, v, username)
 
-        ok = False
-        for attempt in range(3):
-            try:
-                await _send_one(app, text)
-                ok = True
-                break
-            except TelegramRetryAfter as e:
-                await asyncio.sleep(e.retry_after + 1)
-            except TelegramAPIError:
-                break
-            except Exception:
-                break
-
+        ok, err = await send_to_group(bot, group_id, text=text, photo_id=app.photo_file_id)
         if ok:
             sent += 1
             await asyncio.sleep(1.5)  # Telegram: bir guruhga max 20 msg/min
         else:
             failed += 1
+            last_err = err
 
     summary = f"✅ {sent}/{total} ta ariza guruhga yuborildi."
     if failed:
-        summary += f"\n⚠️ {failed} tasi yuborilmadi (xatolik)."
-    await callback.message.answer(summary)
+        summary += f"\n⚠️ {failed} tasi yuborilmadi.\nXato: <code>{last_err}</code>"
+    await callback.message.answer(summary, parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data == "app_post:all")
@@ -1211,6 +1354,43 @@ async def settings_apps_group_help(callback: CallbackQuery):
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "settings:test_group")
+async def settings_test_group(callback: CallbackQuery, bot: Bot):
+    if callback.from_user.id != SUPER_ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    group_id_str = await get_setting("apps_group_id")
+    if not group_id_str:
+        await callback.answer("❌ Arizalar guruhi o'rnatilmagan.", show_alert=True)
+        return
+    try:
+        gid = int(group_id_str)
+    except ValueError:
+        await callback.answer("❌ Guruh ID xato.", show_alert=True)
+        return
+
+    await callback.answer("Tekshirilmoqda…")
+    from app.utils import send_to_group
+    ok, err = await send_to_group(
+        bot, gid,
+        text="🧪 <b>Test xabar</b>\nBot arizalar guruhiga muvaffaqiyatli yozyapti. ✅"
+    )
+    if ok:
+        await callback.message.answer(
+            "✅ Guruhga yuborish ishlayapti. Test xabar guruhga yuborildi."
+        )
+    else:
+        await callback.message.answer(
+            f"❌ <b>Guruhga yuborilmadi!</b>\n"
+            f"Guruh ID: <code>{gid}</code>\n"
+            f"Xato: <code>{err}</code>\n\n"
+            f"<i>Ehtimoliy sabab: bot guruhdan chiqarilgan, yoki guruh superguruhga "
+            f"aylanib ID o'zgargan. Botni guruhga qayta qo'shib, guruh ichida "
+            f"<code>/set_apps_group</code> yuboring.</i>",
+            parse_mode="HTML"
+        )
 
 
 @router.callback_query(lambda c: c.data == "settings:clear_group")

@@ -403,14 +403,11 @@ async def _finalize_application(message: Message, state: FSMContext, bot: Bot):
     admins = await get_all_admins()
     from app.config import SUPER_ADMIN_ID
     from app.database.crud import get_setting
-    notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
-    group_id_str = await get_setting("apps_group_id")
-    if group_id_str:
-        try:
-            notify_ids.add(int(group_id_str))
-        except ValueError:
-            pass
+    from app.utils import send_to_group
     photo_id = data.get("photo_file_id")
+
+    # 1) Adminlarga (shaxsiy chatlarga) yuborish
+    notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
     for chat_id in notify_ids:
         try:
             if photo_id:
@@ -419,3 +416,25 @@ async def _finalize_application(message: Message, state: FSMContext, bot: Bot):
                 await bot.send_message(chat_id, notify_text, parse_mode="HTML")
         except Exception:
             pass
+
+    # 2) Arizalar guruhiga alohida yuborish — xato bo'lsa super_admin xabardor bo'ladi
+    group_id_str = await get_setting("apps_group_id")
+    if group_id_str:
+        try:
+            gid = int(group_id_str)
+        except ValueError:
+            gid = None
+        if gid is not None:
+            ok, err = await send_to_group(bot, gid, text=notify_text, photo_id=photo_id)
+            if not ok:
+                try:
+                    await bot.send_message(
+                        SUPER_ADMIN_ID,
+                        f"⚠️ <b>Ariza guruhga yuborilmadi!</b>\n"
+                        f"Guruh ID: <code>{gid}</code>\n"
+                        f"Xato: <code>{err}</code>\n\n"
+                        f"<i>Botni guruhga qo'shing yoki Sozlamalar → Arizalar guruhini qayta o'rnating.</i>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass

@@ -8,3 +8,5 @@ session-*
 *.session
 *.session-journal
 userbot_settings.json
+
+bot.db
