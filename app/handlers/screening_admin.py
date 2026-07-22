@@ -18,7 +18,10 @@ from app.keyboards.inline import (
     screening_vacancies_keyboard, candidate_list_keyboard, candidate_card_keyboard,
     grade_written_keyboard, grade_video_keyboard,
 )
-from app.question_bank import color_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL
+from app.question_bank import (
+    color_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
+    match_bank_key, QUESTION_BANK,
+)
 from app.handlers.admin import get_role, is_hr
 
 router = Router()
@@ -101,6 +104,42 @@ async def vq_set(callback: CallbackQuery):
         reply_markup=vacancy_questions_menu_keyboard(vid, True)
     )
     await callback.answer("Biriktirildi ✅")
+
+
+@router.callback_query(lambda c: c.data == "vq:autoall")
+async def vq_auto_all(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    await callback.answer("Biriktirilmoqda…")
+    vacancies = await get_all_vacancies()
+    attached, skipped, unmatched = [], [], []
+    for v in vacancies:
+        if await count_vacancy_questions(v.id) > 0:
+            skipped.append(v.title)
+            continue
+        key = match_bank_key(v.title)
+        if not key:
+            unmatched.append(v.title)
+            continue
+        await set_questions_from_bank(v.id, key)
+        attached.append(f"{v.title} → {QUESTION_BANK[key]['title']}")
+
+    lines = ["🤖 <b>Avtomatik biriktirish natijasi</b>\n"]
+    if attached:
+        lines.append("✅ <b>Biriktirildi:</b>")
+        lines += [f"• {x}" for x in attached]
+        lines.append("")
+    if skipped:
+        lines.append("⏭ <b>Savoli bor (o'tkazildi):</b>")
+        lines += [f"• {x}" for x in skipped]
+        lines.append("")
+    if unmatched:
+        lines.append("⚠️ <b>Mos topilmadi (qo'lda biriktiring):</b>")
+        lines += [f"• {x}" for x in unmatched]
+        lines.append("\n<i>Bularni: vakansiya → 📝 Savollar → 📋 Shablondan yuklash.</i>")
+    if not attached and not skipped and not unmatched:
+        lines.append("Vakansiya yo'q.")
+    await callback.message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data.startswith("vq:clear:"))

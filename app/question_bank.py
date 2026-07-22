@@ -485,6 +485,77 @@ MAX_VIDEO = 4
 MAX_TOTAL = 19
 
 
+# ── Vakansiya nomini shablonga avtomatik moslashtirish ─────────────────────
+# (qidiruv_iborasi, bank_kaliti) — eng ANIQ (uzun/maxsus) iboralar birinchi.
+# Birinchi mos kelgan ibora g'olib bo'ladi.
+MATCH_RULES = [
+    ("bosh direktor", "ceo"),
+    (" ceo ", "ceo"),
+    ("general direktor", "ceo"),
+    (" direktor ", "ceo"),
+    ("texnik nazorat", "texnik_nazoratchi"),
+    ("kran muhandis", "kran_muhandisi"),
+    ("kran mashinist", "kran_mashinisti"),
+    ("kranchik", "kran_mashinisti"),
+    ("kran operator", "kran_mashinisti"),
+    ("prorab", "prorab"),
+    ("buxgalter yordamchi", "buxgalter_yordamchisi"),
+    ("yordamchi buxgalter", "buxgalter_yordamchisi"),
+    ("buxgalter", "buxgalter"),
+    ("kassir", "kassir"),
+    ("targetolog", "targetolog"),
+    ("target", "targetolog"),
+    ("yurid", "yuridik_maslahatchi"),
+    ("yurist", "yuridik_maslahatchi"),
+    ("advokat", "yuridik_maslahatchi"),
+    (" pto ", "pto_muhandisi"),
+    ("smeta", "pto_muhandisi"),
+    ("mobilograf", "mobilograf"),
+    ("videograf", "mobilograf"),
+    ("video operator", "mobilograf"),
+    ("hr menejer", "hr_menejer"),
+    (" hr ", "hr_menejer"),
+    (" rop ", "rop"),
+    ("sotuv bolimi rahbari", "rop"),
+    ("sotuv rahbari", "rop"),
+    ("sotuv menejer", "sotuv_menejeri"),
+    ("sotuv operator", "sotuv_operatori"),
+    ("sayhun", "sayhun_sotuvchi"),
+    ("brand face", "brand_face"),
+    ("brend yuz", "brand_face"),
+    ("qiyofa", "brand_face"),
+    ("taminot", "taminotchi"),
+    ("yordamchi xodim", "yordamchi_xodim"),
+    ("dasturchi", "it_mutaxassisi"),
+    ("developer", "it_mutaxassisi"),
+    ("programmist", "it_mutaxassisi"),
+    (" it ", "it_mutaxassisi"),
+    ("operator", "sotuv_operatori"),
+    ("menejer", "sotuv_menejeri"),
+    ("manager", "sotuv_menejeri"),
+    ("sotuvchi", "sotuv_menejeri"),
+    ("sotuv", "sotuv_menejeri"),
+    ("yordamchi", "yordamchi_xodim"),
+]
+
+
+def _normalize_title(title: str) -> str:
+    s = (title or "").lower()
+    for ch in "'ʼ`’‘":
+        s = s.replace(ch, "")
+    # bo'shliqlar bilan o'rab qo'yamiz — qisqa tokenlar (it/hr/rop/ceo) so'z chegarasi bo'yicha mos kelsin
+    return " " + " ".join(s.split()) + " "
+
+
+def match_bank_key(title: str) -> str | None:
+    """Vakansiya nomiga eng mos QUESTION_BANK kalitini qaytaradi (topilmasa None)."""
+    norm = _normalize_title(title)
+    for phrase, key in MATCH_RULES:
+        if phrase in norm:
+            return key
+    return None
+
+
 def color_for(total: int | None) -> str:
     if total is None:
         return "⚪️"

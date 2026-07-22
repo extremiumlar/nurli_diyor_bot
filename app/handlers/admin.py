@@ -9,7 +9,7 @@ from app.database.crud import (
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
     update_vacancy, get_applications, get_application, delete_application,
     get_all_subscribed_users, get_user, get_applicant_ids_by_vacancies,
-    get_setting, set_setting,
+    get_setting, set_setting, set_questions_from_bank,
 )
 from app.keyboards.inline import (
     admin_main_keyboard, admin_settings_keyboard,
@@ -154,12 +154,26 @@ async def new_vacancy_req(message: Message, state: FSMContext):
                          parse_mode="HTML", reply_markup=skip_kb)
 
 
+async def _auto_attach_questions(v) -> str:
+    """Yangi vakansiya nomiga qarab savol shablonini avtomatik biriktiradi.
+    Natija haqida qo'shimcha xabar matnini qaytaradi."""
+    from app.question_bank import match_bank_key, QUESTION_BANK
+    key = match_bank_key(v.title)
+    if not key:
+        return ("\n\n⚠️ Savol shabloni avtomatik topilmadi.\n"
+                "Saralash uchun qo'lda biriktiring: 📝 Savollar → 📋 Shablondan yuklash.")
+    await set_questions_from_bank(v.id, key)
+    return (f"\n\n🤖 Savollar avtomatik biriktirildi: <b>{QUESTION_BANK[key]['title']}</b> "
+            f"(3 test + 2 yozma).\n<i>Kerak bo'lsa o'zgartiring: 📝 Savollar.</i>")
+
+
 @router.callback_query(AddVacancyState.salary, lambda c: c.data == "vacancy_salary_skip")
 async def new_vacancy_salary_skip(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     v = await create_vacancy(data["title"], data["requirements"], salary=None)
     await state.clear()
-    await callback.message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
+    extra = await _auto_attach_questions(v)
+    await callback.message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>{extra}", parse_mode="HTML")
     await callback.answer()
 
 
@@ -168,7 +182,8 @@ async def new_vacancy_salary(message: Message, state: FSMContext):
     data = await state.get_data()
     v = await create_vacancy(data["title"], data["requirements"], salary=message.text.strip())
     await state.clear()
-    await message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>", parse_mode="HTML")
+    extra = await _auto_attach_questions(v)
+    await message.answer(f"✅ Vakansiya yaratildi: <b>{v.title}</b>{extra}", parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data.startswith("admin_vacancy_toggle:"))

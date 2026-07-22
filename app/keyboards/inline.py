@@ -184,6 +184,7 @@ def admin_vacancies_keyboard(vacancies):
         for v in vacancies
     ]
     buttons.append([InlineKeyboardButton(text="➕ Yangi vakansiya", callback_data="admin_vacancy:new")])
+    buttons.append([InlineKeyboardButton(text="🤖 Savollarni avto biriktirish", callback_data="vq:autoall")])
     buttons.append([InlineKeyboardButton(text="📢 Guruhga yuborish", callback_data="vac_post:menu")])
     buttons.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
