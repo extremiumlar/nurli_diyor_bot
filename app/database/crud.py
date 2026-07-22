@@ -531,6 +531,54 @@ async def update_application(app_id: int, **kwargs):
         return app
 
 
+async def update_answer_score(answer_id: int, score: int | None):
+    async with async_session() as session:
+        a = await session.get(ApplicationAnswer, answer_id)
+        if a:
+            a.score = score
+            await session.commit()
+
+
+async def recompute_scores(app_id: int):
+    """Ariza ballarini javoblardan qayta hisoblaydi.
+    written_score — barcha yozma javob ballansa; total — uch ball ham bo'lsa."""
+    from app.question_bank import color_for
+    async with async_session() as session:
+        app = await session.get(Application, app_id)
+        if not app:
+            return None
+        result = await session.execute(
+            select(ApplicationAnswer).where(ApplicationAnswer.application_id == app_id)
+        )
+        answers = result.scalars().all()
+        tests   = [a for a in answers if a.qtype == "test"]
+        written = [a for a in answers if a.qtype == "written"]
+
+        if tests:
+            app.test_score = sum((a.score or 0) for a in tests)
+        if written and all(a.score is not None for a in written):
+            app.written_score = sum(a.score for a in written)
+
+        if (app.test_score is not None and app.written_score is not None
+                and app.video_score is not None):
+            app.total_score = app.test_score + app.written_score + app.video_score
+        await session.commit()
+        await session.refresh(app)
+        return app
+
+
+async def get_screening_counts(vacancy_id: int) -> dict:
+    """Vakansiya bo'yicha holat sanoqlari (submitted/approved/rejected)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Application.status, func.count())
+            .where(Application.vacancy_id == vacancy_id,
+                   Application.status.in_(("submitted", "approved", "rejected")))
+            .group_by(Application.status)
+        )
+        return {row[0]: row[1] for row in result.fetchall()}
+
+
 async def get_ranked_applications(vacancy_id: int | None = None, status: str | None = None):
     """Reyting bo'yicha (total_score kamayish tartibida) arizalar."""
     async with async_session() as session:

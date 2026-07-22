@@ -109,6 +109,7 @@ def admin_main_keyboard(role: str):
     """HR ga moslantirilgan admin panel."""
     buttons = [
         [InlineKeyboardButton(text="💼 Vakansiyalar", callback_data="admin:vacancies")],
+        [InlineKeyboardButton(text="🎯 Saralash (reyting)", callback_data="scr:menu")],
         [InlineKeyboardButton(text="📁 Arizalar",     callback_data="admin:applications")],
         [InlineKeyboardButton(text="📥 Excel eksport", callback_data="admin:export")],
         [InlineKeyboardButton(text="📊 Statistika",   callback_data="admin:stats")],
@@ -225,6 +226,7 @@ def admin_vacancy_detail_keyboard(vacancy_id: int, active: bool):
             callback_data=f"admin_vacancy_toggle:{vacancy_id}"
         )],
         [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"admin_vacancy_edit:{vacancy_id}")],
+        [InlineKeyboardButton(text="📝 Savollar (saralash)", callback_data=f"vq:menu:{vacancy_id}")],
         [InlineKeyboardButton(text="📣 Foydalanuvchilarga e'lon", callback_data=f"vann:menu:{vacancy_id}")],
         [InlineKeyboardButton(text="📁 Arizalar", callback_data=f"admin_apps:{vacancy_id}")],
         [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin_vacancy_delete:{vacancy_id}")],
@@ -323,6 +325,94 @@ def admin_remove_confirm_keyboard(telegram_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"admin_remove_confirm:{telegram_id}")],
         [InlineKeyboardButton(text="❌ Bekor", callback_data=f"admin_detail:{telegram_id}")]
+    ])
+
+
+# ── Saralash: vakansiya savollari (admin) ──────────────────────────────────
+
+def vacancy_questions_menu_keyboard(vacancy_id: int, has_questions: bool):
+    rows = [
+        [InlineKeyboardButton(text="📋 Shablondan yuklash", callback_data=f"vq:tmpl:{vacancy_id}")],
+    ]
+    if has_questions:
+        rows.append([InlineKeyboardButton(text="🗑 Savollarni o'chirish", callback_data=f"vq:clear:{vacancy_id}")])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def question_templates_keyboard(vacancy_id: int):
+    from app.question_bank import QUESTION_BANK
+    rows = [
+        [InlineKeyboardButton(text=v["title"], callback_data=f"vq:set:{vacancy_id}:{key}")]
+        for key, v in QUESTION_BANK.items()
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vq:menu:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── Saralash: HR panel (reyting, baholash) ─────────────────────────────────
+
+def screening_vacancies_keyboard(rows_data):
+    """rows_data: [(vacancy, count), ...]"""
+    rows = [
+        [InlineKeyboardButton(text=f"💼 {v.title} — {cnt} nomzod", callback_data=f"scr:vac:{v.id}")]
+        for v, cnt in rows_data
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def candidate_list_keyboard(apps, vacancy_id: int):
+    from app.question_bank import color_for
+    status_icon = {"submitted": "🕐", "approved": "✅", "rejected": "❌"}
+    rows = []
+    for a in apps:
+        total = a.total_score
+        score_txt = f"{total}/19" if total is not None else "baholanmagan"
+        icon = color_for(total) if total is not None else "⚪️"
+        st = status_icon.get(a.status, "")
+        rows.append([InlineKeyboardButton(
+            text=f"{icon}{st} {a.full_name or a.user_id} — {score_txt}",
+            callback_data=f"scr:app:{a.id}"
+        )])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="scr:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def candidate_card_keyboard(app, written_answers, has_video: bool):
+    rows = []
+    for idx, ans in enumerate(written_answers, start=1):
+        mark = f"({ans.score}/3)" if ans.score is not None else "baholash"
+        rows.append([InlineKeyboardButton(
+            text=f"✍️ Yozma {idx}: {mark}",
+            callback_data=f"scr:wgrade:{app.id}:{ans.id}"
+        )])
+    if has_video:
+        rows.append([InlineKeyboardButton(text="🎥 Videoni ko'rish", callback_data=f"scr:video:{app.id}")])
+    vmark = f"({app.video_score}/4)" if app.video_score is not None else "baholash"
+    rows.append([InlineKeyboardButton(text=f"🎬 Video ball: {vmark}", callback_data=f"scr:vgrade:{app.id}")])
+    if app.status == "submitted":
+        rows.append([
+            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"scr:approve:{app.id}"),
+            InlineKeyboardButton(text="❌ Rad etish",  callback_data=f"scr:reject:{app.id}"),
+        ])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"scr:vac:{app.vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def grade_written_keyboard(app_id: int, answer_id: int):
+    btns = [InlineKeyboardButton(text=str(s), callback_data=f"scr:wset:{app_id}:{answer_id}:{s}") for s in range(4)]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        btns,
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"scr:app:{app_id}")],
+    ])
+
+
+def grade_video_keyboard(app_id: int):
+    btns = [InlineKeyboardButton(text=str(s), callback_data=f"scr:vset:{app_id}:{s}") for s in range(5)]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        btns,
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"scr:app:{app_id}")],
     ])
 
 

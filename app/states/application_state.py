@@ -3,6 +3,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 class ApplicationState(StatesGroup):
     # Foydalanuvchidan tartibli ravishda so'raladigan savollar
+    consent           = State()   # 0. Boshlang'ich rozilik (Ha/Yo'q)
     full_name         = State()   # 1. Ism-familiyasi
     phone             = State()   # 2. Telefon raqami
     age               = State()   # 3. Yosh
@@ -13,6 +14,7 @@ class ApplicationState(StatesGroup):
     education         = State()   # 8. Ma'lumoti
     additional_skills = State()   # 9. Qo'shimcha bilim va ko'nikmalar
     photo             = State()   # 10. Rasm
+    expected_salary   = State()   # 11. Kutgan oylik maosh
 
 
 class ScreeningState(StatesGroup):

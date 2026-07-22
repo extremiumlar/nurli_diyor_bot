@@ -14,6 +14,7 @@ from app.database import models  # noqa
 from app.handlers.start import router as start_router
 from app.handlers.jobseeker import router as jobseeker_router
 from app.handlers.admin import router as admin_router
+from app.handlers.screening_admin import router as screening_admin_router
 from app.middleware.subscription import SubscriptionMiddleware
 
 # ── Bot va event loop — bir marta yaratiladi ───────────────────────────────
@@ -24,7 +25,7 @@ _DB_PATH = os.path.join(os.path.dirname(__file__), "bot.db")
 
 bot = Bot(token=BOT_TOKEN)
 dp  = Dispatcher(storage=SQLiteFSMStorage(_DB_PATH))
-dp.include_routers(start_router, jobseeker_router, admin_router)
+dp.include_routers(start_router, jobseeker_router, admin_router, screening_admin_router)
 
 sub_mw = SubscriptionMiddleware()
 dp.message.middleware(sub_mw)
