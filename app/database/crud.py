@@ -1,9 +1,11 @@
-from sqlalchemy import select, update
+import json
+from sqlalchemy import select, update, delete as sql_delete, func
 from sqlalchemy.orm import selectinload
 from app.database.connect import async_session
 from app.database.models import (
     User, Project, ProjectStage, Subscription,
-    Lead, Vacancy, Application, Admin, BotSettings
+    Lead, Vacancy, Application, Admin, BotSettings,
+    VacancyQuestion, ApplicationAnswer,
 )
 
 
@@ -433,3 +435,114 @@ async def set_setting(key: str, value: str | None):
             obj = BotSettings(key=key, value=value)
             session.add(obj)
         await session.commit()
+
+
+# ── Vakansiya savollari (saralash) ─────────────────────────────────────────
+
+async def get_vacancy_questions(vacancy_id: int, qtype: str | None = None):
+    async with async_session() as session:
+        q = select(VacancyQuestion).where(VacancyQuestion.vacancy_id == vacancy_id)
+        if qtype:
+            q = q.where(VacancyQuestion.qtype == qtype)
+        q = q.order_by(VacancyQuestion.qtype, VacancyQuestion.order_num)
+        result = await session.execute(q)
+        return result.scalars().all()
+
+
+async def count_vacancy_questions(vacancy_id: int) -> int:
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count()).select_from(VacancyQuestion)
+            .where(VacancyQuestion.vacancy_id == vacancy_id)
+        )
+        return result.scalar() or 0
+
+
+async def delete_vacancy_questions(vacancy_id: int):
+    async with async_session() as session:
+        await session.execute(
+            sql_delete(VacancyQuestion).where(VacancyQuestion.vacancy_id == vacancy_id)
+        )
+        await session.commit()
+
+
+async def set_questions_from_bank(vacancy_id: int, bank_key: str) -> int:
+    """QUESTION_BANK'dagi shablonni vakansiyaga nusxalaydi (eskilarini o'chirib).
+    Qo'shilgan savollar sonini qaytaradi."""
+    from app.question_bank import QUESTION_BANK
+    tmpl = QUESTION_BANK.get(bank_key)
+    if not tmpl:
+        return 0
+    async with async_session() as session:
+        await session.execute(
+            sql_delete(VacancyQuestion).where(VacancyQuestion.vacancy_id == vacancy_id)
+        )
+        added = 0
+        for i, t in enumerate(tmpl.get("test", []), start=1):
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="test", order_num=i,
+                text=t["text"], options=json.dumps(t["options"], ensure_ascii=False),
+            ))
+            added += 1
+        for i, w in enumerate(tmpl.get("written", []), start=1):
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="written", order_num=i,
+                text=w["text"], rubric=w.get("rubric"),
+            ))
+            added += 1
+        await session.commit()
+        return added
+
+
+# ── Nomzod javoblari va saralash ───────────────────────────────────────────
+
+async def create_answer(application_id: int, question_id: int | None, qtype: str,
+                        order_num: int, question_text: str | None,
+                        answer_text: str | None, score: int | None,
+                        max_score: int | None):
+    async with async_session() as session:
+        ans = ApplicationAnswer(
+            application_id=application_id, question_id=question_id, qtype=qtype,
+            order_num=order_num, question_text=question_text, answer_text=answer_text,
+            score=score, max_score=max_score,
+        )
+        session.add(ans)
+        await session.commit()
+
+
+async def get_application_answers(application_id: int):
+    async with async_session() as session:
+        result = await session.execute(
+            select(ApplicationAnswer)
+            .where(ApplicationAnswer.application_id == application_id)
+            .order_by(ApplicationAnswer.qtype, ApplicationAnswer.order_num)
+        )
+        return result.scalars().all()
+
+
+async def update_application(app_id: int, **kwargs):
+    async with async_session() as session:
+        app = await session.get(Application, app_id)
+        if app:
+            for key, value in kwargs.items():
+                setattr(app, key, value)
+            await session.commit()
+            await session.refresh(app)
+        return app
+
+
+async def get_ranked_applications(vacancy_id: int | None = None, status: str | None = None):
+    """Reyting bo'yicha (total_score kamayish tartibida) arizalar."""
+    async with async_session() as session:
+        q = select(Application)
+        if vacancy_id:
+            q = q.where(Application.vacancy_id == vacancy_id)
+        if status:
+            q = q.where(Application.status == status)
+        q = q.order_by(
+            Application.total_score.is_(None),      # ballanmaganlar oxirida
+            Application.total_score.desc(),
+            Application.created_at.desc(),
+        )
+        result = await session.execute(q)
+        return result.scalars().all()
