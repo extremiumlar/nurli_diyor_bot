@@ -2,492 +2,749 @@
 """
 Saralash savollari banki — «NURIDDIN BUILDING» HR-bot.
 
-Har vakansiya uchun: 3 ta test savoli (variant + ball) va 2 ta yozma savol.
-Ball qoidasi: eng to'g'ri = 3, qisman = 1, yaroqsiz = 0.
-Bu bank admin panelidan vakansiyaga biriktiriladi (vacancy_questions jadvaliga
-nusxalanadi). Keyinchalik AI orqali savol tuzish shu formatni ishlatadi.
+Manba: «HR Bot Video.docx» (kasbiy darajadagi test savollari + har rolga
+majburiy video-savol). Bu fayl hujjatdan avtomatik generatsiya qilingan.
+
+Har vakansiya uchun:
+  • 3 ta test savoli — variantlar 3 / 1 / 0 ball (eng to'g'ri / qisman / yaroqsiz)
+  • 2 ta yozma savol — HR (keyinchalik AI) 0-3 ball beradi
+  • 1 ta majburiy video-savol — HR 0-4 ball beradi
+
+Jami: test 9 + yozma 6 + video 4 = 19 ball.
+Ball qiymatlari nomzodga KO'RSATILMAYDI; variantlar har safar aralashtiriladi.
 """
 
-# Yozma savollar uchun standart baholash mezonlari (kategoriya bo'yicha)
-RUBRIC_LOGIC = "Mavzuga aloqadorlik, mantiqiy izchillik va chuqurlik, aniq misol, savodxonlik. (0–3)"
-RUBRIC_AI = "Prompt/yechim aniqligi va amaliyligi, AI'dan to'g'ri foydalanish tushunchasi, natijaga yo'naltirilganlik. (0–3)"
-RUBRIC_MOTIVATION = "Samimiylik, aniq shaxsiy tajriba/misol, sohaga qiziqish va mas'uliyat hissi. (0–3)"
+# Yozma savollar uchun standart baholash mezonlari
+RUBRIC_LOGIC = "Mavzuga aloqadorlik, mantiqiy izchillik va chuqurlik, aniq misol, savodxonlik. (0-3)"
+RUBRIC_AI = "Prompt/yechim aniqligi va amaliyligi, AI'dan to'g'ri foydalanish tushunchasi, natijaga yo'naltirilganlik. (0-3)"
+RUBRIC_MOTIVATION = "Samimiylik, aniq shaxsiy tajriba/misol, sohaga qiziqish va mas'uliyat hissi. (0-3)"
 
-
-def _t(text, o3, o1, o0):
-    """Test savoli: 3/1/0 balli 3 variant."""
-    return {
-        "text": text,
-        "options": [
-            {"text": o3, "score": 3},
-            {"text": o1, "score": 1},
-            {"text": o0, "score": 0},
-        ],
-    }
-
-
-def _w(text, rubric):
-    return {"text": text, "rubric": rubric}
-
+# Video-savol uchun umumiy ko'rsatma (har rolning o'z savoli oldidan chiqadi)
+VIDEO_INTRO = (
+    "Avval o'zingizni qisqacha tanishtiring (~10 soniya), so'ng savolga javob bering."
+)
+VIDEO_RUBRIC = "Nutq va ishonch (0-2) + mazmun va rolga moslik (0-2). Format bahoga ta'sir qilmaydi."
 
 QUESTION_BANK = {
     "ceo": {
         "title": "CEO (Bosh direktor)",
         "test": [
-            _t("Kompaniyani inqirozdan olib chiqish yoki keskin o'sishga erishishda birinchi strategik qadamingiz qanday bo'ladi?",
-               "Moliyaviy oqim va jarayonlarni tahlil qilib, o'sish nuqtalariga resurs yo'naltiraman",
-               "Barcha xarajatlarni qisqartirib, xodimlar sonini kamaytiraman",
-               "Rahbariyat ko'rsatmasini kutaman va o'zgarish qilmayman"),
-            _t("Strategik qarorlar va biznes rejalarni tahlil qilishda sun'iy intellekt (AI) vositalaridan qanday foydalanasiz?",
-               "Bozor tahlili, prognozlar va g'oyalar olish uchun AI tizimlaridan faol foydalanaman",
-               "Faqat matn tarjima qilish uchun ishlataman",
-               "Umuman foydalanmayman, faqat o'z tajribamga tayanaman"),
-            _t("Rahbar sifatida jamoada natijadorlik va intizomni saqlashning eng samarali usuli nima?",
-               "KPI, aniq vazifalar va shaffof rag'batlantirish tizimini joriy etaman",
-               "Qattiq jarima va doimiy nazorat tizimini qo'llayman",
-               "Xodimlardan hech qanday talab qo'ymay, erkin qo'yaman"),
+            {
+                "text": "Kompaniyada 4 oyga yetadigan naqd pul (runway) qoldi, daromad har oy ~7% pasaymoqda. Investor qo‘shimcha mablag‘ni faqat birlik iqtisodi (unit-economics) barqaror bo‘lsa beradi. Birinchi qadamingiz?",
+                "options": [
+                    {"text": "Runway’ni uzaytirish uchun eng past qaytimli yo‘nalishlarni to‘xtatib, musbat marja beruvchi yadro biznesga fokuslanaman va investorga LTV/CAC dinamikasini ko‘rsataman", "score": 3},
+                    {"text": "Investor ishonchi uchun darhol yangi bozorga chiqib, o‘sish sur’atini (growth) ko‘rsataman", "score": 1},
+                    {"text": "Barcha bo‘limlar byudjetini bir tekis 20% qisqartirib, jamoani to‘liq saqlab qolaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Bo‘limlar sizga AI generatsiya qilgan prognoz va tahlillar asosida qaror so‘rab kelmoqda. Qanday yondashasiz?",
+                "options": [
+                    {"text": "AI natijasining manba ma’lumoti va farazlarini tekshirib, o‘z kontekstim bilan solishtiraman; xato narxi yuqori qarorlarda inson tekshiruvini majburiy qilaman", "score": 3},
+                    {"text": "AI ko‘p ma’lumotga tayangani uchun tavsiyalarini asosan qabul qilib, tez qaror chiqaraman", "score": 1},
+                    {"text": "AI xato qilishi mumkinligi uchun uni deyarli hisobga olmay, asosan intuitsiyaga tayanaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Eng ko‘p daromad keltiradigan bo‘lim boshlig‘i (jami sotuvning 35%) jamoada qo‘rquv muhiti yaratmoqda; 3 ta kuchli xodim ariza berdi. Nima qilasiz?",
+                "options": [
+                    {"text": "Rahbar bilan o‘lchanadigan xatti-harakat maqsadlari va muddat belgilab, natija saqlangan holda madaniyat tuzatilishini talab qilaman; yaxshilanmasa ajrashaman", "score": 3},
+                    {"text": "Daromad muhim bo‘lgani uchun hozircha saqlab, ketmoqchi bo‘lgan xodimlarga qo‘shimcha rag‘bat berib ushlab qolaman", "score": 1},
+                    {"text": "Madaniyat muhimroq deb, rahbarni tez orada almashtirishga kirishaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Uzoq muddatli rejalashtirish va jamoa samaradorligini oshirish bo'yicha eng muvaffaqiyatli amaliyotingiz qanday bo'lgan?", RUBRIC_LOGIC),
-            _w("Kompaniyaning yillik strategiyasini tahlil qilish uchun AIga qanday prompt yozgan bo'lardingiz? Namuna keltiring.", RUBRIC_AI),
+            {"text": "Kompaniyaning 12 oylik o‘sish rejasini shakllantiring: 3 ta yetakchi metrika (masalan LTV/CAC, marja, retention), ularning taxminiy joriy qiymati va aniq maqsadingiz.", "rubric": RUBRIC_LOGIC},
+            {"text": "Yillik strategiyani tahlil qilish uchun AIga prompt yozing: rol, kontekst ma’lumoti, aniq vazifa va chiqish formati ko‘rsatilgan.", "rubric": RUBRIC_AI},
         ],
+        "video": "Kompaniyani boshqarishda yetakchilik uslubingiz qanday? Birinchi 3 oyda aynan nimaga e’tibor qaratardingiz?",
     },
     "prorab": {
-        "title": "Prorab (Qurilish ishlari boshlig'i)",
+        "title": "Prorab (Qurilish ishlari boshlig‘i)",
         "test": [
-            _t("Obyektda ishchilar belgilangan muddatdan kechikayotgan bo'lsa, birinchi bo'lib nima qilasiz?",
-               "Sababini o'rganib, jarayonni optimallashtiraman va qo'shimcha resurs jalb qilaman",
-               "Ishchilarni jarimaga tortaman",
-               "Kechikishni e'tiborsiz qoldiraman"),
-            _t("Loyiha hujjatlari va smeta bilan ishlashda zamonaviy dastur/texnologiyalardan foydalanasizmi?",
-               "Maxsus dasturlar va raqamli jadvallardan (Excel, AutoCAD va h.k.) foydalanaman",
-               "Faqat qog'oz va qo'lda hisoblayman",
-               "Texnologiyalardan xabarim yo'q"),
-            _t("Obyektda xavfsizlik qoidasi buzilganini ko'rib qoldingiz. Birinchi harakatingiz?",
-               "Darhol ishni to'xtatib, qoidalarni tushuntiraman va choralarni ko'raman",
-               "Faqat kechki payt tanbeh beraman",
-               "Ko'rmaganga olib o'tib ketaman"),
+            {
+                "text": "Monolit ishlar 12 kun orqada. Buyurtmachi jarima bilan bosim o‘tkazmoqda, prognozda 5 kun yomg‘ir. Nima qilasiz?",
+                "options": [
+                    {"text": "Tanqidiy yo‘lni (critical path) qayta hisoblab, ob-havoga bog‘liq bo‘lmagan ishlarni oldinga suraman, resursni qayta taqsimlab, buyurtmachiga asosli yangi grafik + choralar rejasini beraman", "score": 3},
+                    {"text": "Ikki smena joriy qilib, ishchi sonini oshirib, sur’atni majburan tezlashtiraman", "score": 1},
+                    {"text": "Kechikish yomg‘ir sabab bo‘lgani uchun jarima haqsizligini yozma bildirib, ob-havo yaxshilanishini kutaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Beton quyilgandan keyin havo +32°C, quyosh kuchli. Beton sifatini saqlash uchun nima qilasiz?",
+                "options": [
+                    {"text": "Betonni parvarish (uxod) qilaman: namlab, yopib, gidratatsiya rejimini saqlayman va zarur bo‘lsa rejim/qo‘shimchani moslashtiraman", "score": 3},
+                    {"text": "Ustiga bir marta suv sepib, keyin o‘z holiga qo‘yaman", "score": 1},
+                    {"text": "Tez qotishi uchun betonni ochiq, quyoshda qoldiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Yuqori qavatda usta himoya kamarisiz ishlayapti, obyekt topshirishga 2 kun qoldi, brigadir “to‘xtatsak ulgurmaymiz” deyapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Ishni darhol to‘xtatib, himoya vositasini ta’minlab, yo‘riqnoma o‘tkazaman; xavfsizlik grafik bahonasida chetlab o‘tilmaydi", "score": 3},
+                    {"text": "Bugun tugatishga ruxsat berib, ertadan qat’iy nazorat o‘rnataman", "score": 1},
+                    {"text": "Usta tajribali bo‘lgani uchun o‘z javobgarligiga qoldiraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Murakkab obyektda ish hajmini o'z vaqtida va sifatli topshirish uchun qanday boshqaruv usullaridan foydalanasiz?", RUBRIC_LOGIC),
-            _w("Kompaniyamiz obyektlarida sifatni keskin oshirish bo'yicha qanday aniq taklifingiz bor?", RUBRIC_MOTIVATION),
+            {"text": "3 brigada parallel ishlayotgan obyektda tanqidiy yo‘l va resurs to‘qnashuvini kunlik qanday boshqarasiz? Qadam-baqadam yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Obyektda sifat yoki muddatni yaxshilagan aniq tajribangizni avval/keyin ko‘rsatkichi bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Obyektda sifat yoki xavfsizlik uchun qabul qilgan eng muhim qaroringizni ayting — vaziyat qanday edi va nima qildingiz?",
     },
     "texnik_nazoratchi": {
         "title": "Texnik nazoratchi",
         "test": [
-            _t("Pudratchi ishni tez bajarish uchun sifat standartlarini buzayotganini aniqladingiz. Nima qilasiz?",
-               "Ishni qabul qilmayman va standartlarga muvofiq qayta bajarishni talab qilaman",
-               "Puldan ushlab qolaman-u, o'tkazib yuboraman",
-               "Ko'z yumib yuboraman, tezroq bitirsin"),
-            _t("Kamchiliklarni qayd etish va hisobot yuritishda qanday vositalardan foydalanasiz?",
-               "Foto/video dalil bilan maxsus elektron jurnal va hisobotlar yuritaman",
-               "Qog'ozga eskirgan usulda yozib qo'yaman",
-               "Faqat eslab qolaman"),
-            _t("Qurilish materialining sifatsizligi aniqlansa, qanday yo'l tutasiz?",
-               "Dalolatnoma tuzib, materialni obyekt hududidan chetlatishni talab qilaman",
-               "Arzon bo'lsa mayli deyman",
-               "Ishlatishga ruxsat beraman"),
+            {
+                "text": "Monolit ustunda beton himoya qatlami (zashitniy sloy) loyihada 25 mm, obyektda ba’zi joyda 15 mm. Pudratchi “ahamiyatsiz” deyapti, buyurtmachi tez qabulni so‘rayapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Chetlanishni dalolatnoma va foto bilan qayd qilib, loyihachidan yozma xulosa (kelishish yoki tuzatish) talab qilaman; xulosagacha qabul qilmayman", "score": 3},
+                    {"text": "Kichik farq bo‘lgani uchun ro‘yxatga olib, keyingi nazorat sharti bilan qabul qilaman", "score": 1},
+                    {"text": "Pudratchi kafolat maktubi bersa, o‘tkazib yuboraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ochiq armatura karkasini qabul qilyapsiz. Birinchi navbatda nimani tekshirasiz?",
+                "options": [
+                    {"text": "Armatura diametri, qadamlari (shag), anker va ulanish (nahlyost) uzunligini loyiha va ShNQ bilan solishtirib, foto-fiksatsiya qilaman", "score": 3},
+                    {"text": "Umumiy ko‘rinishi va zichligini ko‘z bilan baholab, mustahkam ko‘rinsa qabul qilaman", "score": 1},
+                    {"text": "Pudratchining ijro sxemasiga (ispolnitelnaya) ishonaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Materialning sertifikati va hujjatlari to‘g‘ri, lekin partiyaning bir qismida yoriq va rang farqi bor. Nima qilasiz?",
+                "options": [
+                    {"text": "Namuna olib laboratoriya sinovini talab qilaman, shubhali partiyani ajratib, natijagacha ishlatishni to‘xtataman", "score": 3},
+                    {"text": "Faqat yaroqsiz ko‘ringanini chetga surib, qolganini o‘tkazaman", "score": 1},
+                    {"text": "Hujjat joyida bo‘lgani uchun to‘liq qabul qilaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Texnik nazoratning eng asosiy vazifasi nima va nuqsonlarni o'z vaqtida aniqlash uchun nima qilish kerak?", RUBRIC_LOGIC),
-            _w("Texnik nazoratdagi tajribangiz kompaniyamizga qanday aniq foyda keltiradi?", RUBRIC_MOTIVATION),
+            {"text": "Yashirin ishlarni (armatura, gidroizolyatsiya, zichlash) qoplashdan oldin qabul qilish tartibini va qaysi hujjatlar rasmiylashtirilishini yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Hujjat to‘g‘ri, lekin obyekt real holati mos kelmagan holatni aniqlagan tajribangizni yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Ko‘pchilik “o‘tkazib yuboraylik” degan, lekin siz e’tiroz bildirgan holatni ayting — nega qat’iy turdingiz?",
     },
     "kran_muhandisi": {
         "title": "Kran muhandisi",
         "test": [
-            _t("Kran mexanizmida kichik g'ayritabiiy tovush sezildi, lekin ish davom etishi kerak. Nima qilasiz?",
-               "Darhol ishni to'xtatib, to'liq texnik ko'rikdan o'tkazaman",
-               "Kun oxirigacha ishlatib, keyin qarayman",
-               "E'tibor bermay ishni davom ettiraveraman"),
-            _t("Texnik xizmat jadvali va pasport ma'lumotlarini yuritishda qanday usul qo'llaysiz?",
-               "Raqamli jadval va maxsus texnik bazada qat'iy nazorat qilaman",
-               "Qog'oz daftar tutaman",
-               "Xotiramga tayanaman"),
-            _t("Xavfsizlik texnikasi qoidalari buzilganda munosabatingiz qanday bo'ladi?",
-               "Qoidabuzarlikni darhol bartaraf etib, qat'iy chora ko'raman",
-               "Faqat og'zaki ogohlantirib qo'yaman",
-               "O'zim ham e'tibor bermayman"),
+            {
+                "text": "Minora kran yuk-moment cheklovchisi (OGP) ba’zan noto‘g‘ri ishlayotganini sezdingiz, ish grafigi zich. Nima qilasiz?",
+                "options": [
+                    {"text": "Kranni ishdan chetlab, OGP ni tekshirtiraman/sozlataman; cheklovchi ishlamasa ekspluatatsiya taqiqlanadi, holatni jurnalga yozaman", "score": 3},
+                    {"text": "Yukni pasport quvvatidan ancha past tutib, ehtiyotkorlik bilan ishlatib turaman", "score": 1},
+                    {"text": "Cheklovchi ba’zan ishlagani uchun keyingi rejali ko‘rikkacha davom ettiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Kran po‘lat arqonini (kanat) qachon almashtirishni nimaga qarab belgilaysiz?",
+                "options": [
+                    {"text": "Bir qadamda (shag) uzilgan simlar soni, yeyilish, korroziya va deformatsiyani brakovka me’yorlari bo‘yicha tekshirib belgilayman", "score": 3},
+                    {"text": "Tashqi ko‘rinishi sezilarli yomonlashsa almashtiraman", "score": 1},
+                    {"text": "Faqat ishlab chiqaruvchi ko‘rsatgan muddat o‘tganda almashtiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Shamol tezligi ruxsat etilgan chegaraga yaqinlashdi (14 m/s, chegara 15 m/s), yuk yarim yo‘lda. Nima qilasiz?",
+                "options": [
+                    {"text": "Yukni eng yaqin xavfsiz joyga tushirib, ishni to‘xtataman va kranni bo‘shatib (flyuger rejimi) qo‘yaman", "score": 3},
+                    {"text": "Yukni tezda mo‘ljalga yetkazib, keyin ishni to‘xtataman", "score": 1},
+                    {"text": "Chegaraga hali yetmagani uchun ishni davom ettiraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Og'ir yuk ko'taruvchi texnikada favqulodda holatlarning oldini olish uchun qanday profilaktik choralarni ko'rasiz?", RUBRIC_LOGIC),
-            _w("Texnik xavfsizlikni ta'minlash bo'yicha o'z tajribangizdan qisqa misol keltiring.", RUBRIC_MOTIVATION),
+            {"text": "Kranning smenali texnik ko‘rigi checklistini yozing: qaysi tugunlar, cheklovchilar va hujjatlar tekshiriladi?", "rubric": RUBRIC_LOGIC},
+            {"text": "Nosozlik yoki metall charchoqni erta aniqlab, avariyaning oldini olgan tajribangizni yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Texnik nosozlik yoki metall charchoqni erta aniqlab, avariyaning oldini olgan holatingizni ayting.",
     },
     "sotuv_menejeri": {
         "title": "Sotuv menejeri",
         "test": [
-            _t("Mijoz 'Sizning mahsulotingiz qimmatroq' desa, nima qilasiz?",
-               "Mahsulotning qiymati va beradigan foydasini tushuntiraman",
-               "Darhol chegirma taklif qilaman",
-               "Raqobatchilarni yomonlayman"),
-            _t("Mijoz barcha ma'lumotni olib 'O'ylab ko'raman' desa, qanday yo'l tutasiz?",
-               "Aynan qaysi jihatda ikkilanayotganini aniqlashtiruvchi ochiq savol beraman",
-               "Har kuni bir necha marta qo'ng'iroq qilaman",
-               "'Xo'p, o'ylab ko'ring' deb qo'yaman"),
-            _t("Sotuv matnlari va xabarlarini tayyorlashda AIdan foydalanasizmi?",
-               "Aniq promptlar yozib, ChatGPT va boshqa AI vositalaridan faol foydalanaman",
-               "Faqat tayyor matnni o'qib chiqaman",
-               "Yo'q, umuman ishlatmaganman"),
+            {
+                "text": "Yirik mijoz og‘zaki “ha” dedi, lekin 2 hafta shartnoma imzolamayapti va qo‘ng‘iroqlarga kech javob beryapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Asl to‘siqni aniqlash uchun bosimsiz to‘g‘ridan-to‘g‘ri savol beraman (“imzoni nima to‘xtatib turibdi?”), qaror qabul qiluvchi va muddatni aniqlayman", "score": 3},
+                    {"text": "Chegirma yoki bonus taklif qilib, imzoga undayman", "score": 1},
+                    {"text": "Bosim qilmaslik uchun kutaman, o‘zi tayyor bo‘lganda bog‘lanadi deb", "score": 0},
+                ],
+            },
+            {
+                "text": "Voronkangizda 40 ta “issiq” lid bor, lekin vaqt cheklangan. Qaysi biriga birinchi fokuslanasiz?",
+                "options": [
+                    {"text": "Ehtiyoji tasdiqlangan, byudjeti va qaror qabul qiluvchisi aniq (BANT bo‘yicha yetuk) lidlarga", "score": 3},
+                    {"text": "Eng katta summa va’da qilgan lidlarga", "score": 1},
+                    {"text": "Eng birinchi murojaat qilgan lidlarga navbat bilan", "score": 0},
+                ],
+            },
+            {
+                "text": "Sovuq bazaga (500 kontakt) murojaat matni kerak. AIdan qanday foydalanasiz?",
+                "options": [
+                    {"text": "Segment va og‘riq nuqtaga moslab bir necha variant generatsiya qilib, kichik guruhda A/B test qilaman, javob berganini shaxsiylashtiraman", "score": 3},
+                    {"text": "AIga bitta universal matn yozdirib, hammaga bir xil yuboraman", "score": 1},
+                    {"text": "Tayyor shablonni o‘zgartirmay yuboraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Mijoz telefonda qo'pol munosabatda bo'lib ovozini ko'tardi. Uni yo'qotmaslik uchun birinchi nima deysiz?", RUBRIC_LOGIC),
-            _w("Mijozga yuboriladigan ta'sirli sotuv xabari uchun ChatGPTga qanday prompt yozgan bo'lardingiz? Namuna keltiring.", RUBRIC_AI),
+            {"text": "Mijoz telefonda jahl bilan shartnomani bekor qilmoqchi. Saqlab qolish uchun ilk 3 gapingizni aynan yozing va nega shunday deganingizni bir jumlada asoslang.", "rubric": RUBRIC_LOGIC},
+            {"text": "Sovuq mijozga birinchi xabar uchun AIga prompt yozing: segment, og‘riq nuqta, ohang va chiqish formati ko‘rsatilgan.", "rubric": RUBRIC_AI},
         ],
+        "video": "Meni shu yerdayoq, 30 soniyada kompaniya mahsulotini xarid qilishga qiziqtiring.",
     },
     "it_mutaxassisi": {
         "title": "IT mutaxassisi",
         "test": [
-            _t("Kompaniya serveri yoki boti to'satdan ishdan chiqdi. Birinchi qadamingiz?",
-               "Sababini tezkor aniqlab, zaxira nusxadan tiklash yoki xatoni bartaraf etishni boshlayman",
-               "Boshliqlarga yozib, javob kutib turaman",
-               "Ertalabgacha tegmayman"),
-            _t("Yangi raqamli yechim yoki avtomatlashtirishni joriy etishda qanday yondashasiz?",
-               "Zamonaviy texnologiya va AI yordamida jarayonni tez va samarali avtomatlashtiraman",
-               "Birovning tayyor kodini tushunmasdan ko'chirib qo'yaman",
-               "Faqat eski usulda ishlayveraman"),
-            _t("Tarmoq xavfsizligini ta'minlash uchun asosiy choralar?",
-               "Kuchli parol siyosati, shifrlash va doimiy zaxiralash (backup) tizimini o'rnataman",
-               "Faqat antivirus ishlataman",
-               "Hech qanday chora ko'rmayman"),
+            {
+                "text": "Ishlab chiqarish bazasi ishlamayapti. Oxirgi zaxira (backup) 6 soatlik, undan keyingi tranzaksiyalar unda yo‘q. Nima qilasiz?",
+                "options": [
+                    {"text": "Avval tizimni izolyatsiya qilib diagnostika qilaman; zaxiradan tiklashdan oldin 6 soatlik ma’lumot yo‘qolishi va tranzaksiya log‘idan (point-in-time) tiklash imkonini baholab, keyin qaror qilaman", "score": 3},
+                    {"text": "Vaqt yo‘qotmaslik uchun darhol 6 soatlik zaxiradan tiklab, ishni yo‘lga qo‘yaman", "score": 1},
+                    {"text": "Sababni to‘liq topmaguncha hech narsaga tegmayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Botning API kaliti (token) tasodifan GitHub’ga yuklanganini aniqladingiz. Nima qilasiz?",
+                "options": [
+                    {"text": "Kalitni darhol bekor qilib (revoke) yangisini generatsiya qilaman, log‘lardan suiiste’mol bor-yo‘qligini tekshiraman, sirlarni .env / secret menejerga o‘tkazaman", "score": 3},
+                    {"text": "Repozitoriyni privat qilib, o‘sha kommitni o‘chiraman", "score": 1},
+                    {"text": "Kalit hali ishlayotgani uchun keyinroq almashtiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Telegram bot foydalanuvchi soni oshib, sekinlashib qoldi. Birinchi qadamingiz?",
+                "options": [
+                    {"text": "Monitoring bilan tor bo‘g‘inni (DB so‘rovlari, tashqi API, CPU/xotira) o‘lchab aniqlab, so‘ng aniq sababga qarab optimallashtiraman (indeks, kesh, navbat)", "score": 3},
+                    {"text": "Serverni kuchliroq tarifga (resurs) ko‘taraman", "score": 1},
+                    {"text": "Kodni noldan qayta yozishni boshlayman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kutilmagan texnik nosozlik yuz berganda uni bartaraf etish uchun qanday algoritm bo'yicha ishlaysiz?", RUBRIC_LOGIC),
-            _w("Kompaniya samaradorligini oshirish uchun qanday IT yechim yoki avtomatlashtirishni taklif qilasiz?", RUBRIC_AI),
+            {"text": "Botlar va veb-sayt uzluksizligi uchun monitoring, ogohlantirish (alerting) va zaxiralash tizimini qanday qurasiz? RTO/RPO ni qanday belgilaysiz?", "rubric": RUBRIC_LOGIC},
+            {"text": "Kompaniya jarayonidan bittasini avtomatlashtirish yechimingizni yozing: texnologiya steki, integratsiya va kutilgan samara (vaqt/xato).", "rubric": RUBRIC_AI},
         ],
+        "video": "Hal qilgan eng murakkab texnik muammoingizni va uni qanday yechganingizni ayting.",
     },
     "mobilograf": {
         "title": "Mobilograf (Video operator)",
         "test": [
-            _t("Obyektdan tezkor va e'tiborni tortadigan Reels/video olish kerak. Qanday yondashasiz?",
-               "Dinamik kadr, sifatli ovoz va zamonaviy trendga mos montaj ssenariysi bilan tasvirga olaman",
-               "Oddiygina videoga olib qo'yaman",
-               "Faqat rasmga olaman"),
-            _t("Video g'oyalari va ssenariy topishda AI yoki trend tahlilidan foydalanasizmi?",
-               "AI va ijtimoiy tarmoq trendlarini tahlil qilib, kreativ ssenariylar tayyorlayman",
-               "Faqat o'zim o'ylab topaman",
-               "Boshqalardan ko'chiraman"),
-            _t("Topshirish muddati qisqa, lekin sifat talab darajasida bo'lishi kerak. Nima qilasiz?",
-               "Tezkor montaj qilib, e'tiborni eng zo'r kadrlarga qarataman",
-               "Muddatni o'zgartirishni so'rayman",
-               "Sifatini tushirib yuboraman"),
+            {
+                "text": "3 soniyada e’tiborni ushlaydigan Reels kerak. Qaysi yondashuv eng samarali?",
+                "options": [
+                    {"text": "Kuchli vizual yoki savolli “hook” bilan boshlab, dinamik kadr, tez montaj va subtitr bilan retention’ni ushlab turaman", "score": 3},
+                    {"text": "Sifatli, chiroyli, lekin sekin kirish (intro/logotip) bilan boshlayman", "score": 1},
+                    {"text": "Jarayonni ketma-ket, montajsiz ko‘rsataman", "score": 0},
+                ],
+            },
+            {
+                "text": "Quyoshli kunda tashqarida olyapsiz, kadr juda yorug‘ (peresvet). Nima qilasiz?",
+                "options": [
+                    {"text": "ISO past qilib, diafragma va zatvor tezligini sozlayman, kerak bo‘lsa ND-filtr ishlataman va yorug‘likka teskari olishdan qochaman", "score": 3},
+                    {"text": "Telefonda avtomatik rejimda olib, keyin montajda yorqinlikni tushiraman", "score": 1},
+                    {"text": "Shundoq olib, tahrirda tuzataman", "score": 0},
+                ],
+            },
+            {
+                "text": "Muddat ertaga ertalab, montaj yarim bo‘ldi, mijoz sifatni talab qilyapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Ssenariyni eng ta’sirli 3–4 kadrga qisqartirib, tayyor preset/shablon bilan yakuniy sifatni saqlagan holda ustuvor qismni bitiraman", "score": 3},
+                    {"text": "Tunab bo‘lsa ham hamma rejalashtirilgan kadrni to‘liq montaj qilaman", "score": 1},
+                    {"text": "Sifatni pasaytirib, tez topshiraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kompaniya faoliyatini (qurilish va xizmatlar) ijtimoiy tarmoqlarda ommalashtirish uchun qanday video formatlarni taklif qilasiz?", RUBRIC_LOGIC),
-            _w("Reels ssenariysi yaratish uchun AIga qanday prompt berardingiz? Bitta namuna yozing.", RUBRIC_AI),
+            {"text": "Qurilish kompaniyasi uchun 30 kunlik kontent-reja tuzing: 3–4 format, chastota va har birining maqsadi (tanilish, ishonch, lid).", "rubric": RUBRIC_LOGIC},
+            {"text": "Bitta Reels ssenariysi uchun AIga prompt yozing: hook, davomiylik, ohang, maqsadli auditoriya va CTA ko‘rsatilgan.", "rubric": RUBRIC_AI},
         ],
+        "video": "Bu videoning o‘zini mobilograf sifatida qiziqarli qilib oling (kadr, yorug‘lik, montaj) va o‘zingizni tanishtiring — bu sizning ish namunangiz.",
     },
     "hr_menejer": {
         "title": "HR menejer",
         "test": [
-            _t("Bo'sh vakansiyaga tezkor va malakali nomzod topish kerak. Qanday strategiya qo'llaysiz?",
-               "Telegram botlar, maqsadli e'lonlar va faol sourcing usullaridan foydalanaman",
-               "Faqat tanish-bilish orqali izlayman",
-               "Bitta joyga e'lon berib kutaman"),
-            _t("Dastlabki saralash va test tuzishda AIdan foydalanasizmi?",
-               "AI yordamida testlar, savollar va baholash mezonlarini avtomatlashtiraman",
-               "Internetdan tayyor ko'chirib olaman",
-               "Hammasini qo'lda qilaman"),
-            _t("Xodimlar orasida kelishmovchilik chiqqanda birinchi qadamingiz?",
-               "Vaziyatni o'rganib, xolis muloqot orqali murosaga keltiraman",
-               "Ikkalasini darhol ishdan bo'shataman",
-               "Aralashmayman"),
+            {
+                "text": "2 hafta ichida malakali prorab kerak, oddiy e’lonlar ishlamayapti. Qanday yondashasiz?",
+                "options": [
+                    {"text": "Aniq profil tuzib, faol sourcing (soha chatlari, tavsiya, raqobatchi xodimlari, yarmarkalar) va target e’lonni birlashtiraman, voronkani kunlik kuzataman", "score": 3},
+                    {"text": "Bir nechta ish saytiga pullik e’lon joylab, arizalarni kutaman", "score": 1},
+                    {"text": "Ish haqini oshirib e’lon berib, ko‘proq nomzod kelishini kutaman", "score": 0},
+                ],
+            },
+            {
+                "text": "AI skrining nomzodlarni ballab beryapti. Undan qanday foydalanasiz?",
+                "options": [
+                    {"text": "AIni birlamchi tartiblash uchun ishlataman, mezonlar shaffofligi va noxolislik (bias) yo‘qligini tekshiraman, yakuniy qarorni o‘zim ko‘rib chiqaman", "score": 3},
+                    {"text": "AI reytingi yuqori 10 nomzodni to‘g‘ridan-to‘g‘ri suhbatga chaqiraman", "score": 1},
+                    {"text": "AIga ishonmay, barcha CV ni to‘liq qo‘lda ko‘rib chiqaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ikki kuchli xodim ochiq janjallashdi, biri ketish bilan qo‘rqityapti. Birinchi qadamingiz?",
+                "options": [
+                    {"text": "Har birini alohida tinglab, faktlar va asl sababni aniqlayman, so‘ng umumiy manfaat asosida aniq kelishuv va kuzatuv belgilayman", "score": 3},
+                    {"text": "Darhol umumiy majlis chaqirib, ochiq muhokama qilaman", "score": 1},
+                    {"text": "Ketish bilan qo‘rqitgan xodim tomonini olib, ikkinchisiga tanbeh beraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kadrlar oqimini (xodimlar ketishini) kamaytirish uchun qanday motivatsiya tizimini taklif qilasiz?", RUBRIC_LOGIC),
-            _w("Nomzodning professional darajasi va shaxsiy sifatlarini 1 daqiqalik video orqali aniqlashda e'tibor beradigan 3 ta asosiy mezoningiz nima?", RUBRIC_LOGIC),
+            {"text": "Kadrlar oqimini (turnover) kamaytirish rejasini yozing: 90 kun ichida 3 aniq chora va har birini qaysi ko‘rsatkich bilan o‘lchaysiz.", "rubric": RUBRIC_LOGIC},
+            {"text": "1 daqiqalik videodan nomzodni baholash uchun 3 mezon tuzing va har biri uchun 0/1/2/3 ballning konkret mezonini (rubrika) yozing.", "rubric": RUBRIC_LOGIC},
         ],
+        "video": "Yaxshi nomzodni qanday ajratasiz? Suhbatda birinchi navbatda nimaga e’tibor berasiz?",
     },
     "rop": {
-        "title": "ROP (Sotuv bo'limi rahbari)",
+        "title": "ROP (Sotuv bo‘limi rahbari)",
         "test": [
-            _t("Sotuv bo'limi oylik rejadan ortda qolmoqda. Birinchi harakatingiz?",
-               "Analitika qilib, oqsayotgan bosqichni aniqlayman va jamoaga amaliy yordam beraman",
-               "Rejani o'zim bajarishga urinaman",
-               "Xodimlarni qattiq jarimaga tortaman"),
-            _t("Sotuv skriptlari va avtomatizatsiyada AIdan qanday foydalanasiz?",
-               "AI yordamida skriptlarni mukammallashtiraman va CRM tahlilini tezlashtiraman",
-               "Faqat xodimlar o'zlari yozadi",
-               "Foydalanmayman, eskicha ishlaymiz"),
-            _t("Yangi menejerni jamoaga tez moslashtirish uchun qanday tizim qo'llaysiz?",
-               "Mentorlik tizimi, tayyor baza va kunlik tahlil orqali tezkor o'qitaman",
-               "Faqat kitob o'qishni aytaman",
-               "O'z holiga tashlab qo'yaman"),
+            {
+                "text": "Bo‘lim rejaning 60% ida, oyga 8 kun qoldi. Konversiya normal, lekin lid soni kam. Nima qilasiz?",
+                "options": [
+                    {"text": "Muammo lid oqimida ekanini aniqlab, marketing bilan lid manbasini kuchaytiraman va bazadagi “uxlab yotgan” lidlarni qayta ishga solaman", "score": 3},
+                    {"text": "Har menejerga individual og‘ir reja qo‘yib, kunlik bosim o‘tkazaman", "score": 1},
+                    {"text": "Konversiyani oshirish uchun skriptni butunlay o‘zgartiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "CRM’da 3 oylik ma’lumot bor. AI bilan nimani birinchi tahlil qilasiz?",
+                "options": [
+                    {"text": "Voronka bosqichlari bo‘yicha konversiya va “to‘kilish” (drop-off) nuqtasini topib, eng zaif bosqichga skript/jarayon yaxshilashni yo‘naltiraman", "score": 3},
+                    {"text": "Har menejerning umumiy sotuv summasini reyting qilaman", "score": 1},
+                    {"text": "Faqat yopilgan bitimlar ro‘yxatini chiqaraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Yangi menejer 2 haftada natija bermayapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Qo‘ng‘iroq/uchrashuvlarini tinglab, qaysi bosqichda oqsayotganini aniqlab, nuqtaviy mashq beraman; onboarding maqsadlari realligini qayta ko‘raman", "score": 3},
+                    {"text": "Yana bir oy vaqt berib, o‘zi o‘rganishini kutaman", "score": 1},
+                    {"text": "Natija bermagani uchun almashtirishga tayyorlanaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Sotuv bo'limida konversiyani oshirish va menejerlar mas'uliyatini kuchaytirish uchun qanday KPI tizimini qo'llaysiz?", RUBRIC_LOGIC),
-            _w("Sotuv bo'limini boshqarishdagi eng yaxshi natijaviy tajribangiz haqida qisqacha yozing.", RUBRIC_MOTIVATION),
+            {"text": "Menejerlar mas’uliyatini oshiruvchi KPI tizimini yozing: 4–5 ko‘rsatkich, ularning vazni va qanday hisoblanishi.", "rubric": RUBRIC_LOGIC},
+            {"text": "Rejadan orqada qolgan oyni yopib chiqqan tajribangizni raqamlar (boshlang‘ich %, oxirgi natija, qanday harakat) bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Rejadan orqada qolgan bo‘limni qanday yopib chiqqaningizni ayting — qanday harakat qildingiz va natija qanday bo‘ldi?",
     },
     "buxgalter": {
         "title": "Buxgalter",
         "test": [
-            _t("Soliq hisoboti muddati yaqin, lekin hujjatlarda yetishmovchilik bor. Nima qilasiz?",
-               "Zudlik bilan mas'ullar bilan bog'lanib, hujjatlarni tiklayman va o'z vaqtida topshiraman",
-               "Hisobotni kechiktiraman",
-               "Kutib turaman"),
-            _t("Moliyaviy hisobot va soliq hisob-kitobida qanday dasturlardan foydalanasiz?",
-               "1C, Soliq va raqamli buxgalteriya dasturlaridan to'liq foydalanaman",
-               "Faqat oddiy Excel ishlataman",
-               "Faqat qog'ozda yuritaman"),
-            _t("Xarajatlarni optimallashtirish uchun qanday moliyaviy nazorat o'rnatasiz?",
-               "Birlamchi hujjatlarni qat'iy nazorat qilib, xarajatlar smetasini yuritaman",
-               "Hamma xarajatni taqiqlayman",
-               "Nazorat qilmayman"),
+            {
+                "text": "QQS hisoboti muddati ertaga. Yirik kontragentdan olingan ЭСФ (elektron schyot-faktura) tizimda tasdiqlanmagan. Nima qilasiz?",
+                "options": [
+                    {"text": "Kontragentdan ЭСФ ni zudlik bilan tasdiqlashini talab qilaman; ulgurmasa o‘sha summani hisobga olmay muddatida topshirib, keyin uточненный (qo‘shimcha) hisobot beraman", "score": 3},
+                    {"text": "Summani hisobga olib topshiraman, kontragent keyin tasdiqlaydi deb umid qilaman", "score": 1},
+                    {"text": "Kontragent tasdiqlaguncha hisobotni kechiktiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Oy yakunida bank vypiskasi 1C dagi qoldiq bilan mos kelmayapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Bank vypiskasi va 1C provodkalarini pozitsiya bo‘yicha solishtirib (sverka), farq qayerdaligini topib to‘g‘rilayman", "score": 3},
+                    {"text": "1C qoldig‘ini bank raqamiga tenglashtirib, farqni “boshqa xarajat”ga yozaman", "score": 1},
+                    {"text": "Farq kichik bo‘lsa, e’tibor bermayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Rahbar soliqni kamaytirish uchun soxta xarajat hujjatlarini kiritishni so‘radi. Nima qilasiz?",
+                "options": [
+                    {"text": "Buni jinoiy/soliq xatari sifatida yozma tushuntirib, mavjud qonuniy imtiyoz va optimallashtirish variantlarini taklif qilaman", "score": 3},
+                    {"text": "Ko‘rsatmani bajaraman, lekin javobgarlik rahbarda ekanini yozib qo‘yaman", "score": 1},
+                    {"text": "Rahbar aytgani uchun bajaraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Moliyaviy xatarlarning oldini olish va soliq qonunchiligiga rioya bo'yicha qanday nazorat usullarini qo'llaysiz?", RUBRIC_LOGIC),
-            _w("Buxgalteriya jarayonini avtomatlashtirish bo'yicha qanday tajribangiz yoki taklifingiz bor?", RUBRIC_AI),
+            {"text": "Moliyaviy xatar va soliq xatolarining oldini oluvchi ichki nazorat tartibingizni yozing (kim, nimani, qachon tekshiradi).", "rubric": RUBRIC_LOGIC},
+            {"text": "Buxgalteriya jarayonidan bittasini avtomatlashtirib vaqt yoki xatoni kamaytirgan taklif yoki tajribangizni yozing.", "rubric": RUBRIC_AI},
         ],
+        "video": "Bajargan eng murakkab moliyaviy yoki soliq vazifangizni va uni qanday hal qilganingizni ayting.",
     },
     "kassir": {
         "title": "Kassir",
         "test": [
-            _t("Kassa hisob-kitobida kamomad (minus) chiqdi. Birinchi ishingiz?",
-               "Hujjat va o'tgan operatsiyalarni sinchiklab tekshirib, sababini aniqlayman va rahbariyatga bildiraman",
-               "O'z cho'ntagimdan to'lab, indamayman",
-               "Boshqaga to'nkab qo'yaman"),
-            _t("Kassa dasturlari va terminal tizimlari bilan ishlash tajribangiz qanday?",
-               "Maxsus kassa dasturi, terminal va raqamli tizimlarda mukammal ishlayman",
-               "Hozircha yangi o'rganaman",
-               "Faqat qo'lda daftarga yozaman"),
-            _t("Mijoz pulni sanab berayotganda shoshtirsa yoki xato qilsa, qanday yo'l tutasiz?",
-               "Xotirjam mablag'ni qayta va aniq sanab, keyin qabul qilaman",
-               "Shoshilib qabul qilib yuboraman",
-               "Jahlim chiqadi"),
+            {
+                "text": "Smena oxirida kassada 150 000 so‘m kamomad. Ertaga inventarizatsiya. Nima qilasiz?",
+                "options": [
+                    {"text": "Cheklar va operatsiyalarni tartib bilan qayta tekshirib sababini aniqlayman va topilsin-topilmasin rahbariyatga rasmiy (yozma) bildiraman", "score": 3},
+                    {"text": "Farqni o‘z pulimdan yopib, hisobni tenglashtiraman", "score": 1},
+                    {"text": "Keyingi smenaga o‘tkazib, keyin qarayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Terminal orqali to‘lov “muvaffaqiyatli” chiqdi, lekin bankdan tasdiq (chek) kelmadi. Nima qilasiz?",
+                "options": [
+                    {"text": "Tovarni bermay, tranzaksiya bank hisobidan o‘tganini tasdiqlaguncha kutaman; ikkilanish bo‘lsa qayta o‘tkazmayman", "score": 3},
+                    {"text": "Terminal “ha” degani uchun tovarni beraman", "score": 1},
+                    {"text": "Mijozdan qayta to‘lashni so‘rayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Navbat uzun, mijoz yirik summani naqd beryapti va shoshirmoqda. Nima qilasiz?",
+                "options": [
+                    {"text": "Xotirjam qayta sanab, detektor bilan tekshirib qabul qilaman — tezlik aniqlikdan ustun emas", "score": 3},
+                    {"text": "Mijozga ishonib, tez sanab qabul qilaman", "score": 1},
+                    {"text": "Navbat ketmasin deb, sanashni yengil o‘tkazib yuboraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Pul bilan ishlashda xavfsizlik va xatoga yo'l qo'ymaslik uchun qanday shaxsiy qoidalarga amal qilasiz?", RUBRIC_LOGIC),
-            _w("Kassir ishida halollik va intizom nega eng muhim fazilat deb o'ylaysiz?", RUBRIC_MOTIVATION),
+            {"text": "Pul bilan ishlashda kamomad va xatoning oldini oluvchi shaxsiy tartibingizni yozing (smena boshi, davomida, oxirida).", "rubric": RUBRIC_LOGIC},
+            {"text": "Kassir ishida halollik va aniqlik nega hal qiluvchi ekanini misol bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Nega pul bilan ishlashda sizga ishonsa bo‘ladi? Aniqlik va halollikni qanday ta’minlaysiz?",
     },
     "targetolog": {
         "title": "Targetolog",
         "test": [
-            _t("Reklama byudjeti sarflanyapti, lekin kutilgan lidlar kelmayapti. Nima qilasiz?",
-               "Auditoriya, kreativ va offerni tahlil qilib, A/B testlar orqali o'zgartirish kiritaman",
-               "Byudjetni shunchaki oshiraman",
-               "Reklamani butunlay o'chiraman"),
-            _t("Reklama matni va banner g'oyalarini tayyorlashda AIdan foydalanasizmi?",
-               "AI yordamida konversiyaga yo'naltirilgan turli matn va g'oyalar generatsiya qilaman",
-               "Faqat o'zim o'ylayman",
-               "Boshqalardan ko'chiraman"),
-            _t("Facebook Ads qoidalari bo'yicha reklama bloklansa, qanday yo'l tutasiz?",
-               "Qoidabuzarlikni aniqlab tuzataman va apellyatsiya yo'llayman",
-               "Reklamani butunlay to'xtataman",
-               "Boshqa profil ochib, aylanib o'taman"),
+            {
+                "text": "Kampaniyada CTR 3% (yaxshi), CPC arzon, lekin 5 kunda atigi 2 ta lid. Byudjet 70% sarflandi. Muammo qayerda va nima qilasiz?",
+                "options": [
+                    {"text": "Muammo click’dan keyin (landing/offer) deb faraz qilib, landing konversiyasi va lid-forma bosqichini tekshiraman, offer va sahifani A/B test qilaman", "score": 3},
+                    {"text": "Auditoriyani kengaytirib, byudjetni oshiraman", "score": 1},
+                    {"text": "CTR yaxshi bo‘lsa ham kreativni butunlay almashtiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ikki kreativni A/B test qilyapsiz. Qachon g‘olibni tanlaysiz?",
+                "options": [
+                    {"text": "Statistik ishonchli namuna (konversiyalar soni) yig‘ilgach, xarajatga nisbatan natija (CPL/ROAS) bo‘yicha tanlayman", "score": 3},
+                    {"text": "1 kun ishlagach, qaysi biri ko‘proq bosilgan bo‘lsa, o‘shani tanlayman", "score": 1},
+                    {"text": "O‘zimga chiroyliroq ko‘ringanini qoldiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Reklama kabineti qoidabuzarlik uchun bloklandi. Nima qilasiz?",
+                "options": [
+                    {"text": "Aniq sababni topib, kreativ/sahifani qoidaga moslab tuzataman, rasmiy apellyatsiya yuboraman va hisob ishonchini (domen, to‘lov) tozalayman", "score": 3},
+                    {"text": "Reklamani to‘xtatib, blok o‘zi ochilishini kutaman", "score": 1},
+                    {"text": "Yangi Business Manager ochib, aylanib o‘taman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kompaniyamiz uchun target reklamada eng yuqori ROI olish uchun qanday strategiya qo'llaysiz?", RUBRIC_LOGIC),
-            _w("Oxirgi muvaffaqiyatli reklama kampaniyangiz va uning natijalari (raqamlar bilan) haqida yozing.", RUBRIC_MOTIVATION),
+            {"text": "Cheklangan byudjetda maksimal ROI strategiyangizni yozing: auditoriya, offer, kreativ testlash va o‘lchov (CPL/ROAS).", "rubric": RUBRIC_LOGIC},
+            {"text": "Oxirgi kampaniyangiz natijalarini raqamlar bilan yozing: byudjet, lidlar, CPL va ROI.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Eng muvaffaqiyatli reklama kampaniyangizni raqamlari (byudjet, lid narxi, natija) bilan ayting.",
     },
     "yuridik_maslahatchi": {
         "title": "Yuridik maslahatchi",
         "test": [
-            _t("Tuzilayotgan shartnomada kompaniya uchun yashirin yuridik xatar sezdingiz. Nima qilasiz?",
-               "Xatarni batafsil bayon qilib, bandlarni kompaniya manfaatiga moslab o'zgartiraman",
-               "Shartnomani rad etaman, lekin sababini tushuntirmayman",
-               "E'tibor bermay imzo qo'yaveraman"),
-            _t("Normativ hujjatlar va o'zgarishlarni kuzatishda raqamli bazalardan foydalanasizmi?",
-               "Lex.uz va zamonaviy yuridik tahlil vositalaridan faol foydalanaman",
-               "Faqat qog'oz kodekslarni o'qiyman",
-               "Kuzatib bormayman"),
-            _t("Kompaniyaga nisbatan da'vo kelib tushdi. Birinchi harakatingiz?",
-               "Da'voni huquqiy o'rganib, muddatida asosli e'tiroz yoki javob tayyorlayman",
-               "Boshliqlarga tashlab qo'yaman",
-               "Javob bermay yashirib qo'yaman"),
+            {
+                "text": "Yirik shartnomada cheksiz javobgarlik (неограниченная ответственность) va nizolar chet el sudida ko‘rilishi yozilgan. Ikkinchi tomon shoshiryapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Xatarni yozma bayon qilib, javobgarlik shiftini (cap) va nizolarni O‘zbekiston yurisdiksiyasi/arbitrajga o‘tkazishni taklif qilaman; kelishilgunicha imzoni kechiktiraman", "score": 3},
+                    {"text": "Bandlarni og‘zaki muhokama qilib, ishonch asosida imzolashga rozi bo‘laman", "score": 1},
+                    {"text": "Biznes muhim bo‘lgani uchun bandlarni o‘tkazib yuboraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Yangi xodim bilan mehnat shartnomasi tuzyapsiz. Nimaga alohida e’tibor berasiz?",
+                "options": [
+                    {"text": "Sinov muddati, mehnat sharoiti, ish haqi va bekor qilish asoslarini Mehnat kodeksi talablariga muvofiqlashtirib, tomonlar huquqini muvozanatlashtiraman", "score": 3},
+                    {"text": "Standart namunani olib, faqat ism va lavozimni o‘zgartiraman", "score": 1},
+                    {"text": "Faqat ish haqi kelishilsa, qolganini keyin rasmiylashtiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Kompaniyaga da’vo tushdi, javob muddati 10 kun. Birinchi harakatingiz?",
+                "options": [
+                    {"text": "Da’vo asosi va dalillarni huquqiy tahlil qilib, muddatida asosli e’tiroz/javob tayyorlayman va kerakli hujjatlarni yig‘aman", "score": 3},
+                    {"text": "Ikkinchi tomon bilan sudsiz kelishishga urinib, javobni kechiktiraman", "score": 1},
+                    {"text": "Rahbariyat qaror qilsin deb kutaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Shartnomalarni tuzishda huquqiy xatarlarni minimallashtirish uchun qanday tekshiruv tizimini qo'llaysiz?", RUBRIC_LOGIC),
-            _w("Yuridik amaliyotingizda hal qilgan eng murakkab muammo va uning yechimi haqida yozing.", RUBRIC_MOTIVATION),
+            {"text": "Shartnoma imzolashdan oldingi huquqiy tekshiruv (due diligence) tartibingizni yozing: qaysi bandlar va hujjatlar tekshiriladi.", "rubric": RUBRIC_LOGIC},
+            {"text": "Amaliyotingizdagi eng murakkab huquqiy holat va uni qanday hal qilganingizni yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Amaliyotingizdagi eng murakkab huquqiy holatni va uni qanday hal qilganingizni ayting.",
     },
     "pto_muhandisi": {
-        "title": "PTO muhandisi (Loyiha-smeta bo'limi)",
+        "title": "PTO muhandisi (Loyiha-smeta bo‘limi)",
         "test": [
-            _t("Narxlar oshgani sababli smeta oshib ketish xavfi paydo bo'ldi. Nima qilasiz?",
-               "Zudlik bilan optimallashtirish variantlarini topib, rahbariyatga hisobot beraman",
-               "Ishni to'xtatib qo'yaman",
-               "Indamay xarajatni oshirib yuboraman"),
-            _t("Smeta va hajmlarni hisoblashda qanday dasturiy ta'minotdan foydalanasiz?",
-               "Smeta dasturlari va ilg'or Excel jadvallaridan foydalanib tez va aniq hisoblayman",
-               "Faqat qo'lda kalkulyatorda hisoblayman",
-               "Taxminan yozaman"),
-            _t("Loyiha hujjatida xatolik aniqlansa, qanday yo'l tutasiz?",
-               "Loyiha muallifi va buyurtmachi bilan kelishib, rasmiy o'zgartirish kiritaman",
-               "O'z bilganimcha to'g'rilab qo'yaman",
-               "E'tibor bermayman"),
+            {
+                "text": "Loyiha jarayonida metall narxi 18% oshdi, smeta byudjetdan chiqmoqda, buyurtmachi qo‘shimcha to‘lovga rozi emas. Nima qilasiz?",
+                "options": [
+                    {"text": "Muqobil material/konstruktiv yechim va hajmni qayta ko‘rib, sifatga ta’sir qilmaydigan optimallashtirishni hisob bilan taklif qilaman va o‘zgarishlarni rasmiylashtiraman", "score": 3},
+                    {"text": "Yashirin zaxira (rezerv) hisobidan yopib, smetani o‘zgartirmayman", "score": 1},
+                    {"text": "Smetani indamay oshirib, keyin tushuntiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Smetada normativ baza va koeffitsientlar to‘g‘ri qo‘llanganini qanday tekshirasiz?",
+                "options": [
+                    {"text": "Amaldagi resurs normalari (ShNQ/РСН), joriy narx indekslari va nakladnoy/plan-jamg‘arma koeffitsientlarini loyiha hajmiga solishtirib tekshiraman", "score": 3},
+                    {"text": "O‘tgan o‘xshash obyekt smetasini nusxalab, narxni yangilayman", "score": 1},
+                    {"text": "Umumiy tajriba bo‘yicha chamalab hisoblayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ishchi chizmadagi (rabochiy chertyoj) hajm loyiha smetasidan farq qilyapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Farqni hujjatlashtirib, loyihachi va buyurtmachi bilan rasmiy o‘zgartirish (izmenenie) kiritib, so‘ng hisobni yangilayman", "score": 3},
+                    {"text": "Chizmaga ishonib, o‘zim to‘g‘rilab qo‘yaman", "score": 1},
+                    {"text": "Smetaga ishonib, chizmani e’tibormay qoldiraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Smeta tuzishda va xarajatlarni qat'iy nazorat qilishda qanday usullarni qo'llaysiz?", RUBRIC_LOGIC),
-            _w("PTO sohasida ish jarayonini tezlashtirish bo'yicha o'z tajribangizdan misol keltiring.", RUBRIC_MOTIVATION),
+            {"text": "Smetada xarajat oshib ketishining oldini oluvchi nazorat tizimini yozing (rejadan chetlanishni qanday erta ushlaysiz).", "rubric": RUBRIC_LOGIC},
+            {"text": "Smeta yoki hisob jarayonini tezlashtirgan yoki xarajatni kamaytirgan aniq tajribangizni yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Smeta yoki hisob ishida aniqlik va tejamkorlikni qanday ta’minlaganingizni bir misolda ayting.",
     },
     "buxgalter_yordamchisi": {
         "title": "Buxgalter yordamchisi",
         "test": [
-            _t("Birlamchi hujjatda (faktura, nakladnoy) imzo yoki sana yetishmayapti. Nima qilasiz?",
-               "Mas'ul shaxs bilan bog'lanib, hujjatni to'g'rilattirib, keyin kiritaman",
-               "Shundoq o'tkazib yuboraman",
-               "Yirtib tashlayman"),
-            _t("1C va Excelda ishlash darajangiz qanday?",
-               "Birlamchi hujjatlarni tez va xatosiz kirita olaman",
-               "Faqat o'rganishni boshlayapman",
-               "Umuman ishlamaganman"),
-            _t("Ko'p hujjat kiritishda charchoq tufayli xato xavfi bo'lsa, nima qilasiz?",
-               "Diqqat bilan tekshirib, qisqa tanaffuslar bilan xatosiz ishlashni ta'minlayman",
-               "Ishni tashlab ketaman",
-               "Xato bo'lsa farqi yo'q"),
+            {
+                "text": "Katta partiya birlamchi hujjat (nakladnoy) da imzo va muhr yo‘q, bosh buxgalter oy yopilishiga ulgurish uchun kiritishni so‘rayapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Mas’uldan hujjatni rasmiylashtirtirib, so‘ng kiritaman; ulgurmasa holatni bosh buxgalterga yozma bildirib, uning qaroriga havola qilaman", "score": 3},
+                    {"text": "“Keyin tuzatamiz” deb kiritib qo‘yaman va belgilab qo‘yaman", "score": 1},
+                    {"text": "Shundoq o‘tkazib yuboraman", "score": 0},
+                ],
+            },
+            {
+                "text": "1C ga kirim qilyapsiz, kontragent bazada ikki xil nom bilan takrorlangan (dublikat). Nima qilasiz?",
+                "options": [
+                    {"text": "Rekvizitlari to‘liq to‘g‘ri kontragentni aniqlab, provodkani unga bog‘layman, dublikatni belgilab, bosh buxgalter bilan birlashtirishni kelishaman", "score": 3},
+                    {"text": "Qaysi biri chiqsa, o‘shanga kiritaveraman", "score": 1},
+                    {"text": "Yangi uchinchi kontragent ochib kiritaman", "score": 0},
+                ],
+            },
+            {
+                "text": "200 ta hujjatni kiritish kerak, charchoq bor. Nima qilasiz?",
+                "options": [
+                    {"text": "Bloklarga bo‘lib, har blokdan keyin summalarni jami bo‘yicha solishtirib (kontrol) tekshiraman", "score": 3},
+                    {"text": "Hammasini kiritib, oxirida bir marta umumiy tekshiraman", "score": 1},
+                    {"text": "Tez kiritib, xato bo‘lsa keyin topiladi deb qoldiraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Birlamchi hujjatlar bilan ishlashda xatoga yo'l qo'ymaslik uchun qanday tartibga amal qilasiz?", RUBRIC_LOGIC),
-            _w("Nega buxgalteriya sohasida karyerangizni davom ettirmoqchisiz va qanday maqsadlaringiz bor?", RUBRIC_MOTIVATION),
+            {"text": "Birlamchi hujjatlar bilan ishlashda xatoning oldini oluvchi shaxsiy tartibingizni yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Nega buxgalteriyada davom etmoqchisiz va 1–2 yillik aniq maqsadingiz nima?", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Nega buxgalteriya sohasida o‘smoqchisiz? 1–2 yillik aniq maqsadingiz nima?",
     },
     "yordamchi_xodim": {
         "title": "Yordamchi xodim",
         "test": [
-            _t("Sizga bir vaqtda ikkita turli topshiriq berildi. Qanday yo'l tutasiz?",
-               "Muhimligi va shoshilinchligiga qarab navbat bilan ikkalasini ham bajaraman",
-               "Faqat bittasini qilib, ikkinchisini unutaman",
-               "Ikkalasini ham qilmayman"),
-            _t("Berilgan topshiriqda mas'uliyatni qanday tushunasiz?",
-               "Topshiriqni sifatli, o'z vaqtida va oxirigacha yetkazib bajaraman",
-               "Aytgandek qilib qo'ysam bo'ldi",
-               "Faqat nazorat bo'lsa bajaraman"),
-            _t("Jamoada tartib va tozalikni saqlashga yondashuvingiz qanday?",
-               "Doimo tartib va ozodalikka o'zim rioya qilib, boshqalarga yordam beraman",
-               "Faqat buyursalar qilaman",
-               "Boshqalarning ishi deb o'ylayman"),
+            {
+                "text": "Ikki rahbar bir vaqtda topshiriq berdi: biri “shu zahoti”, ikkinchisi “bugun kechgacha”. Nima qilasiz?",
+                "options": [
+                    {"text": "Ikkalasidan muhimlik va real muddatni aniqlab, “shu zahoti”ni birinchi bajaraman va ikkinchisiga qachon tayyor bo‘lishimni aytaman", "score": 3},
+                    {"text": "Birinchi aytgan rahbarnikini to‘liq bitirib, keyin ikkinchisiga o‘taman", "score": 1},
+                    {"text": "Ikkalasini birdan qilishga urinib, ikkalasini ham yarim qoldiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Topshiriqni bajarding, lekin yo‘l-yo‘lakay boshqa muammoni (masalan, buzuq jihoz) ko‘rib qolding. Nima qilasiz?",
+                "options": [
+                    {"text": "Topshiriqni tugatib, ko‘rgan muammoni mas’ulga darhol xabar qilaman yoki o‘zim hal qila olsam, hal qilaman", "score": 3},
+                    {"text": "Menga aytilmagani uchun e’tibor bermayman", "score": 1},
+                    {"text": "Keyin esimga kelsa aytaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Sizga ishonib topshirilgan ishni belgilangan vaqtda ulgurmasligingiz aniq bo‘ldi. Nima qilasiz?",
+                "options": [
+                    {"text": "Ulgurmasligim ma’lum bo‘lishi bilan mas’ulni ogohlantirib, sabab va muqobil yechim taklif qilaman", "score": 3},
+                    {"text": "Oxirigacha urinib ko‘rib, ulgurmasam keyin aytaman", "score": 1},
+                    {"text": "Aytmayman, o‘zi bilib qoladi", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kutilmagan yordamchi yumushlarni bajarishda sizni qaysi xususiyatingiz ajratib turadi?", RUBRIC_LOGIC),
-            _w("Ishga munosabatingiz va intizomingiz haqida qisqacha yozing.", RUBRIC_MOTIVATION),
+            {"text": "Bir kunda ko‘p mayda topshiriq bo‘lsa, ularni qanday tartib va nazorat bilan bajarasiz?", "rubric": RUBRIC_LOGIC},
+            {"text": "Ishga munosabatingiz va intizomingizni misol bilan qisqacha yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Nega sizga ishonch bilan ish topshirsa bo‘ladi? Mas’uliyat va intizomingizni misol bilan ayting.",
     },
     "kran_mashinisti": {
         "title": "Kran mashinisti",
         "test": [
-            _t("Noqulay ob-havoda (kuchli shamol) yuk ko'tarish talab qilindi. Nima qilasiz?",
-               "Xavfsizlik qoidasiga ko'ra ishni rad etib, ob-havo yaxshilanishini kutaman",
-               "Tavakkal qilib ko'taraman",
-               "Buyruq bo'lsa ko'taraveraman"),
-            _t("Kranni har kuni ishga tushirishdan oldin texnik tekshiruvdan o'tkazasizmi?",
-               "Har safar to'liq texnik ko'rikdan o'tkazib, so'ng ishni boshlayman",
-               "Faqat haftada bir marta",
-               "Yo'q, shunchaki o'tirib ishlayveraman"),
-            _t("Yuk ko'tarishda xavfli zonada odam yurganini ko'rdingiz. Birinchi harakatingiz?",
-               "Zudlik bilan kran harakatini to'xtatib, odamlarni xavfsiz hududga chiqaraman",
-               "Signal berib davom etaveraman",
-               "E'tibor bermayman"),
+            {
+                "text": "Kuchli shamol (~16 m/s), kran pasporti chegarasi 15 m/s. Brigadir bitta panelni ko‘tarishni shoshirtiryapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Chegaradan oshgani uchun ishni rad etaman, kranni bo‘shatib (flyuger) qo‘yaman va sababini rasmiy bildiraman", "score": 3},
+                    {"text": "Bitta yengil panel bo‘lgani uchun ehtiyot bo‘lib ko‘taraman", "score": 1},
+                    {"text": "Brigadir javobgar deb, buyruqni bajaraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Smena boshida kranni ishga tushirishdan oldin nimani tekshirasiz?",
+                "options": [
+                    {"text": "Arqon, tormoz, cheklovchilar (kontsevik/OGP), signal va tirgaklarni (autrigger) vahtaviy jurnal bo‘yicha tekshirib, so‘ng ishlataman", "score": 3},
+                    {"text": "Faqat ko‘zga tashlanadigan nosozlik bor-yo‘qligini ko‘raman", "score": 1},
+                    {"text": "Ishlab turgani uchun to‘g‘ridan-to‘g‘ri boshlayveraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ko‘tarilayotgan yuk noto‘g‘ri bog‘langanini (strop qiyshiq, og‘irlik markazi siljigan) sezdingiz. Nima qilasiz?",
+                "options": [
+                    {"text": "Ko‘tarishni to‘xtatib, yukni tushirib, stropalshchik bilan qayta to‘g‘ri bog‘lataman", "score": 3},
+                    {"text": "Sekin, ehtiyot bo‘lib ko‘tarib boraman", "score": 1},
+                    {"text": "Signalchi ruxsat bergani uchun davom etaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kran boshqarishda favqulodda vaziyatlarning oldini olish uchun qanday qoidalarga qat'iy amal qilasiz?", RUBRIC_LOGIC),
-            _w("Og'ir yuklar bilan ishlash tajribangiz va xavfsizlik mas'uliyatingiz haqida yozing.", RUBRIC_MOTIVATION),
+            {"text": "Kran boshqarishda avariyaning oldini oluvchi qat’iy qoidalaringizni va qaysi holatda ishni rad etishingizni yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Og‘ir yuk bilan ishlash tajribangiz va xavfsizlik uchun mas’uliyatingizni misol bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Og‘ir yuk bilan ishlash tajribangizni va xavfsizlikka munosabatingizni ayting.",
     },
     "sotuv_operatori": {
         "title": "Sotuv operatori",
         "test": [
-            _t("Mijoz telefonda asabiy gapirib, shikoyat qilyapti. Nima qilasiz?",
-               "Xotirjam tinglab, tushunish bildiraman va muammosini hal qilishga yordam beraman",
-               "Boshqasiga ulab yuboraman",
-               "Men ham ovozimni ko'taraman yoki go'shakni qo'yaman"),
-            _t("Muloqot paytida ma'lumotni CRMga tezkor va xatosiz kirita olasizmi?",
-               "Suhbat davomida bir vaqtda CRMga tezkor va aniq yozib boraman",
-               "Sekin yozaman",
-               "Faqat qog'ozga yozaman"),
-            _t("Kun davomida ko'p qo'ng'iroqda xushmuomalalikni saqlash uchun nima qilasiz?",
-               "Har bir mijozga birinchi mijozdek e'tibor va iliqlik bilan munosabatda bo'laman",
-               "Ohangsiz, quruq javob beraman",
-               "Asabiylashaman"),
+            {
+                "text": "Mijoz jahl bilan: “to‘lov qildim, buyurtma kelmadi, pulimni qaytaring!” — sizda hozir aniq javob yo‘q. Nima qilasiz?",
+                "options": [
+                    {"text": "Xotirjam tinglab, muammoni tan olaman, buyurtmani tekshirib aniq keyingi qadam va muddatni aytaman va mas’ulga eskalatsiya qilaman", "score": 3},
+                    {"text": "“Tekshiramiz” deb, boshqa bo‘limga ulab yuboraman", "score": 1},
+                    {"text": "“Bu mening bo‘limim emas” deb tushuntiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Suhbat davomida mijoz tez gapiryapti va ko‘p ma’lumot beryapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Asosiy ma’lumotni suhbat davomida CRMga tuzilgan tarzda yozib boraman va tushunganimni qisqa takrorlab tasdiqlataman", "score": 3},
+                    {"text": "Suhbatni tugatib, esimda qolganini keyin yozaman", "score": 1},
+                    {"text": "Hammasini qog‘ozga yozib, keyin CRMga ko‘chiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Kun bo‘yi 60+ qo‘ng‘iroq, charchadingiz, keyingi mijoz ham xuddi shu savolni beryapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Har mijoz uchun bu birinchi marta ekanini yodda tutib, bir xil iliqlik va e’tibor bilan javob beraman; skriptdan foydalanaman", "score": 3},
+                    {"text": "Charchaganim uchun javobni qisqartirib, quruq beraman", "score": 1},
+                    {"text": "Ohangimni o‘zgartirmasdan, zerikkan tarzda javob beraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Mijozning shubhali savollariga ishonchli javob berishda qanday usuldan foydalanasiz?", RUBRIC_LOGIC),
-            _w("Sotuv operatori sifatida mijozni jalb qilishdagi asosiy qurolingiz nima?", RUBRIC_MOTIVATION),
+            {"text": "Mijozning qiyin yoki shubhali savoliga (masalan raqobatchi bilan solishtirish) ishonchli javob berish uslubingizni yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Mijozni jalb qilishda asosiy kuchli tomoningiz nima? Misol bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Asabiy, jahli chiqqan mijoz bilan qanday muomala qilishingizni ko‘rsating (istasangiz vaziyatni o‘ynab bering).",
     },
     "brand_face": {
         "title": "Brand Face (Kompaniya qiyofasi)",
         "test": [
-            _t("Prodyuser matnni qo'lingizga bermay, mavzuni aytib, improvizatsiya so'radi. Nima qilasiz?",
-               "Mavzuni tez tushunib, erkin va ishonchli tarzda tabiiy chiqish qilaman",
-               "Faqat yozib berilsa o'qiyman",
-               "Juda hayajonlanaman va gapira olmayman"),
-            _t("Brend videosi ssenariysiga o'zingizdan kreativlik qo'sha olasizmi?",
-               "Kreativ g'oyalar qo'shib, videoni jonli va qiziqarli chiqishini ta'minlayman",
-               "Faqat aytilganini qilaman",
-               "Fikr bildirmayman"),
-            _t("Ijtimoiy tarmoqdagi negativ izohlarga qanday munosabatda bo'lasiz?",
-               "Professional yondashib, xotirjam va odob bilan javob beraman",
-               "E'tibor bermay o'tkazib yuboraman",
-               "Jahl bilan javob qaytaraman"),
+            {
+                "text": "Prodyuser matnsiz, faqat mavzu berib, jonli improvizatsiya so‘radi va kamera yozyapti. Nima qilasiz?",
+                "options": [
+                    {"text": "10–15 soniyada kirish–asosiy fikr–yakun (CTA) tuzib, tabiiy va ishonch bilan gapiraman; kichik xatoda ham to‘xtamay davom etaman", "score": 3},
+                    {"text": "Bir necha kalit gapni yozib olib, so‘ng gapiraman", "score": 1},
+                    {"text": "Tayyor matn bo‘lmasa, noqulay his qilib, gapira olmayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Ssenariy sizga zerikarli va auditoriyaga tegmaydigandek tuyuldi. Nima qilasiz?",
+                "options": [
+                    {"text": "Aniq sabab va muqobil kreativ variantni prodyuserga taklif qilib, kelishilgach jonli chiqish qilaman", "score": 3},
+                    {"text": "Aytilganini bajaraman, o‘z fikrimni bildirmayman", "score": 1},
+                    {"text": "Yoqmagani uchun sust, ishtiyoqsiz suratga tushaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Videongiz ostida ochiq tuhmat va haqoratli izohlar ko‘paydi. Nima qilasiz?",
+                "options": [
+                    {"text": "Xotirjam, professional va faktga asoslangan javob beraman yoki jamoa bilan yagona pozitsiyani (javob berish/bermaslik) kelishaman", "score": 3},
+                    {"text": "Barcha salbiy izohni o‘chirib tashlayman", "score": 1},
+                    {"text": "Keskin, hissiy javob qaytaraman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Kompaniyaning ommaviy imidjini ko'tarish va ishonch uyg'otishda Brand Face sifatida qanday rol o'ynaysiz?", RUBRIC_LOGIC),
-            _w("Kamera oldidagi erkinligingiz va xarizmangizni ko'rsatish uchun 1 daqiqalik video-vizitkada nima haqida gapirasiz?", RUBRIC_MOTIVATION),
+            {"text": "Kompaniya imidjini mustahkamlashda Brand Face sifatidagi rolingizni va o‘ziga xos uslubingizni tasvirlang.", "rubric": RUBRIC_LOGIC},
+            {"text": "1 daqiqalik video-vizitka uchun qisqa ssenariy yozing: o‘zingizni qanday ochasiz, asosiy g‘oya va yakun.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Kamera oldida o‘zingizni erkin tanishtiring va shu kompaniyani auditoriyaga qiziqarli qilib taqdim eting — bu sizning namunangiz.",
     },
     "sayhun_sotuvchi": {
         "title": "Sayhun bozorda sotuvchi",
         "test": [
-            _t("Mijoz mahsulot tanlashda ikkilanmoqda. Unga qanday yordam berasiz?",
-               "Ehtiyojini so'rab, mos eng yaxshi mahsulotni tavsiya qilaman va afzalligini tushuntiraman",
-               "Majburan sotishga urinaman",
-               "O'z holiga qo'yib qo'yaman"),
-            _t("Savdo nuqtasida mahsulot qoldig'i va tartibini qanday saqlaysiz?",
-               "Doimo mahsulotni ko'rinadigan joyda, toza va tartibli saqlayman",
-               "Vaqti-vaqti bilan qarayman",
-               "Tartibga e'tibor bermayman"),
-            _t("Pul hisob-kitobida adashmaslik uchun nima qilasiz?",
-               "Har xaridda pulni diqqat bilan sanab, qaytimni aniq beraman",
-               "Shoshilib beraman",
-               "Tavakkal sanayman"),
+            {
+                "text": "Mijoz mahsulotni tanladi, lekin narxni eshitib ikkilanmoqda. Nima qilasiz?",
+                "options": [
+                    {"text": "Ehtiyoji va byudjetini so‘rab, aynan mos variantni (arzonroq yoki sifatliroq) taklif qilib, afzalligini narxga bog‘lab tushuntiraman", "score": 3},
+                    {"text": "Darrov eng arzon mahsulotni ko‘rsataman", "score": 1},
+                    {"text": "“Narxi shu” deb, o‘zi qaror qilishini kutaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Mahsulot qoldig‘i to‘satdan tugab qolmasligi uchun nima qilasiz?",
+                "options": [
+                    {"text": "Kunlik savdo va qoldiqni hisoblab, tez sotiladiganini oldindan buyurtma qilib, javonni to‘ldirib turaman", "score": 3},
+                    {"text": "Tugaganini ko‘rganda buyurtma beraman", "score": 1},
+                    {"text": "Ta’minot o‘zi keladi deb, qoldiqni kuzatmayman", "score": 0},
+                ],
+            },
+            {
+                "text": "Kun oxirida kassa hisobi mahsulot qoldig‘iga mos kelmadi. Nima qilasiz?",
+                "options": [
+                    {"text": "Cheklar, savdo va qoldiqni solishtirib, farq qayerdan chiqqanini aniqlab, egasiga bildiraman", "score": 3},
+                    {"text": "Kichik farq bo‘lsa, o‘z hisobimdan tenglashtiraman", "score": 1},
+                    {"text": "E’tibor bermay, ertaga qarayman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Bozor ichidagi raqobat muhitida mijozni aynan bizning savdo nuqtamizdan xarid qilishga qanday undaysiz?", RUBRIC_LOGIC),
-            _w("Savdo sohasida erishgan eng yaxshi natijangiz yoki mijoz bilan qiziqarli voqeani yozing.", RUBRIC_MOTIVATION),
+            {"text": "Bozordagi raqobatda mijozni aynan sizdan xarid qilishga qanday undaysiz? Aniq usul yozing.", "rubric": RUBRIC_LOGIC},
+            {"text": "Savdoda erishgan eng yaxshi natijangiz yoki mijoz bilan qiziqarli voqeani yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Meni 30 soniyada bitta mahsulotni sotib olishga ko‘ndiring — real savdo qilib ko‘rsating.",
     },
     "taminotchi": {
-        "title": "Ta'minotchi",
+        "title": "Ta’minotchi",
         "test": [
-            _t("Zudlik kerak material bozorda qolmagan yoki juda qimmat. Nima qilasiz?",
-               "Muqobil yetkazib beruvchi va ulgurji bazalar orqali tezkor topib, eng maqbul narxda keltiraman",
-               "Qimmat bo'lsa ham darrov sotib olaveraman",
-               "'Topolmadim' deb qo'l siltayman"),
-            _t("Yetkazib beruvchilar bilan narx va sifat muzokarasida qanday usul qo'llaysiz?",
-               "Uzoq muddatli hamkorlik va hajm evaziga eng yaxshi chegirma va shartlarga erishaman",
-               "Faqat aytgan narxini berib olib kelaman",
-               "Tortishishni yoqtirmayman"),
-            _t("Olib kelingan material sifati talabga javob bermasa, nima qilasiz?",
-               "Darhol tovarni qaytarib, sifatlisiga almashtirishni talab qilaman",
-               "Rahbariyatga aytmasdan ishlataveraman",
-               "Shundoq qabul qilibaveraman"),
+            {
+                "text": "Obyektga zudlik bilan sement kerak, doimiy yetkazib beruvchida yo‘q; boshqasida bor, lekin 30% qimmat va sifati noma’lum. Nima qilasiz?",
+                "options": [
+                    {"text": "Bir vaqtda bir necha muqobil manbani tekshirib, sifat sertifikatini so‘rab, narx-muddat-sifat bo‘yicha eng maqbulini tanlayman va rahbarni xabardor qilaman", "score": 3},
+                    {"text": "Ish to‘xtamasin deb, qimmat va noma’lum sifatlisini darrov olaman", "score": 1},
+                    {"text": "“Borida yo‘q ekan” deb kutaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Yetkazib beruvchi katta partiyaga arzon narx berdi, lekin to‘lovni 100% oldindan talab qilyapti. Nima qilasiz?",
+                "options": [
+                    {"text": "Narx yaxshi bo‘lsa ham, sifat va yetkazishni kafolatlaydigan shartnoma va bosqichli to‘lov (avans + qolgani yetkazilgach) ni kelishaman", "score": 3},
+                    {"text": "Arzon bo‘lgani uchun oldindan to‘liq to‘layman", "score": 1},
+                    {"text": "Ishonchsiz deb, umuman voz kechaman", "score": 0},
+                ],
+            },
+            {
+                "text": "Kelgan material qisman sifatsiz, ish shoshilinch, qaytarish 2 kun ketadi. Nima qilasiz?",
+                "options": [
+                    {"text": "Yaroqli qismini aktlab qabul qilib, sifatsizini qaytaraman va yetishmaganini muqobil manbadan zudlik bilan qoplab, rahbarni xabardor qilaman", "score": 3},
+                    {"text": "Shoshilinch bo‘lgani uchun sifatsizini ham ishlatishga beraman", "score": 1},
+                    {"text": "Rahbarga aytmasdan hammasini qabul qilaman", "score": 0},
+                ],
+            },
         ],
         "written": [
-            _w("Ta'minotda tezkorlik va tejamkorlikni bir vaqtda qanday ta'minlaysiz?", RUBRIC_LOGIC),
-            _w("Ta'minotdagi aloqalaringiz va eng murakkab buyurtmani muvaffaqiyatli bajarganingiz haqida yozing.", RUBRIC_MOTIVATION),
+            {"text": "Ta’minotda tezkorlik, narx va sifatni bir vaqtda qanday muvozanatlaysiz? Muqobil manba bazasini qanday shakllantirasiz?", "rubric": RUBRIC_LOGIC},
+            {"text": "Eng murakkab yoki shoshilinch buyurtmani muvaffaqiyatli bajarganingizni misol bilan yozing.", "rubric": RUBRIC_MOTIVATION},
         ],
+        "video": "Eng murakkab yoki shoshilinch buyurtmani qanday bajarganingizni ayting — qayerdan, qanday topdingiz?",
     },
 }
 
 
-# Reyting rang chegaralari (jami 19 balldan). Sozlamada o'zgartirilishi mumkin.
-COLOR_GREEN_MIN = 14   # 🟢 >= 14
-COLOR_YELLOW_MIN = 9   # 🟡 9–13, 🔴 <= 8
-
-MAX_TEST = 9
-MAX_WRITTEN = 6
-MAX_VIDEO = 4
-MAX_TOTAL = 19
-
-
 # ── Vakansiya nomini shablonga avtomatik moslashtirish ─────────────────────
 # (qidiruv_iborasi, bank_kaliti) — eng ANIQ (uzun/maxsus) iboralar birinchi.
-# Birinchi mos kelgan ibora g'olib bo'ladi.
 MATCH_RULES = [
     ("bosh direktor", "ceo"),
     (" ceo ", "ceo"),
@@ -526,6 +783,7 @@ MATCH_RULES = [
     ("qiyofa", "brand_face"),
     ("taminot", "taminotchi"),
     ("yordamchi xodim", "yordamchi_xodim"),
+    ("yordamchi hodim", "yordamchi_xodim"),
     ("dasturchi", "it_mutaxassisi"),
     ("developer", "it_mutaxassisi"),
     ("programmist", "it_mutaxassisi"),
@@ -541,9 +799,8 @@ MATCH_RULES = [
 
 def _normalize_title(title: str) -> str:
     s = (title or "").lower()
-    for ch in "'ʼ`’‘":
+    for ch in "'\u02bc`\u2019\u2018":
         s = s.replace(ch, "")
-    # bo'shliqlar bilan o'rab qo'yamiz — qisqa tokenlar (it/hr/rop/ceo) so'z chegarasi bo'yicha mos kelsin
     return " " + " ".join(s.split()) + " "
 
 
@@ -556,11 +813,38 @@ def match_bank_key(title: str) -> str | None:
     return None
 
 
+# ── Ball va rang ───────────────────────────────────────────────────────────
+MAX_TEST = 9
+MAX_WRITTEN = 6
+MAX_VIDEO = 4
+MAX_TOTAL = 19
+
+COLOR_GREEN_MIN = 14   # yashil >= 14
+COLOR_YELLOW_MIN = 9   # sariq 9-13, qizil <= 8
+
+# Excel uchun rang kodlari (ARGB, openpyxl)
+XL_GREEN = "C6EFCE"
+XL_YELLOW = "FFEB9C"
+XL_RED = "FFC7CE"
+XL_GREY = "E7E9EB"
+
+
 def color_for(total: int | None) -> str:
     if total is None:
-        return "⚪️"
+        return "\u26aa\ufe0f"
     if total >= COLOR_GREEN_MIN:
-        return "🟢"
+        return "\U0001f7e2"
     if total >= COLOR_YELLOW_MIN:
-        return "🟡"
-    return "🔴"
+        return "\U0001f7e1"
+    return "\U0001f534"
+
+
+def excel_fill_for(total: int | None) -> str:
+    """Excel katakchasi uchun fon rangi."""
+    if total is None:
+        return XL_GREY
+    if total >= COLOR_GREEN_MIN:
+        return XL_GREEN
+    if total >= COLOR_YELLOW_MIN:
+        return XL_YELLOW
+    return XL_RED

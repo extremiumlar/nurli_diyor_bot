@@ -936,12 +936,16 @@ async def get_photo(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
-# ── Excel eksport ──────────────────────────────────────────────────────────
+# ── Excel eksport — saralash reytingi ─────────────────────────────────────
+# Har vakansiya alohida sheet; nomzodlar ball bo'yicha tartiblanadi va
+# rang bilan belgilanadi (yashil / sariq / qizil).
 
 EXCEL_HEADERS = [
-    "Tartib", "Ariza №", "Topshirilgan vaqt", "Ism familiya", "Telefon", "Yosh",
-    "Qayerdan", "Tillar", "Lavozim", "Ish tajribasi", "Ma'lumot",
-    "Qo'shimcha ko'nikmalar", "Rasm", "CV",
+    "O'rin", "Ariza №", "Topshirilgan", "Holat",
+    "Ism familiya", "Telefon", "Yosh", "Qayerdan", "Tillar",
+    "Test (9)", "Yozma (6)", "Video (4)", "JAMI (19)", "Daraja",
+    "Kutgan maosh", "Ma'lumot", "Ish tajribasi", "Qo'shimcha ko'nikmalar",
+    "Video", "Rasm",
 ]
 
 _BAD_SHEET_CHARS = set('\\/?*[]:')
@@ -961,6 +965,14 @@ def _safe_sheet_name(name: str, used: set[str]) -> str:
     return clean
 
 
+STATUS_TEXT = {
+    "submitted":   "Ko'rib chiqilmoqda",
+    "approved":    "TASDIQLANGAN",
+    "rejected":    "Rad etilgan",
+    "in_progress": "Tugatilmagan",
+}
+
+
 @router.callback_query(lambda c: c.data == "admin:export")
 async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     role = await get_role(callback.from_user.id)
@@ -973,10 +985,16 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     from aiogram.types import BufferedInputFile
     from io import BytesIO
     from datetime import datetime
+    from app.question_bank import (
+        excel_fill_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
+        COLOR_GREEN_MIN, COLOR_YELLOW_MIN,
+    )
 
     apps = await get_applications()
+    # Tugatilmagan (yarim tashlangan) arizalar reytingga kirmaydi
+    apps = [a for a in apps if a.status != "in_progress"]
     if not apps:
-        await callback.answer("Arizalar yo'q.", show_alert=True)
+        await callback.answer("Hisobotga tushadigan ariza yo'q.", show_alert=True)
         return
 
     await callback.answer("Tayyorlanmoqda…")
@@ -992,58 +1010,80 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     wb.remove(wb.active)
     used_names: set[str] = set()
 
-    header_font = Font(bold=True, color="000000", size=12)
-    header_fill = PatternFill(start_color="FFE599", end_color="FFE599", fill_type="solid")
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin_side   = Side(border_style="thin", color="000000")
-    header_border = Border(top=thin_side, bottom=thin_side, left=thin_side, right=thin_side)
+    thin = Side(border_style="thin", color="9AA5B1")
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
+    center = Alignment(horizontal="center", vertical="center")
 
-    ordered_vids = [v.id for v in vacancies if v.id in grouped] + [vid for vid in grouped if vid not in vacancy_map]
+    ordered_vids = ([v.id for v in vacancies if v.id in grouped]
+                    + [vid for vid in grouped if vid not in vacancy_map])
 
+    total_rows = 0
     for vid in ordered_vids:
-        rows = sorted(
-            grouped[vid],
-            key=lambda a: a.created_at or datetime.min
-        )
+        rows = grouped[vid]
+        # Reyting: ball bo'yicha yuqoridan pastga (baholanmaganlar oxirida)
+        rows.sort(key=lambda a: (a.total_score is None, -(a.total_score or 0),
+                                 -(a.test_score or 0)))
         v = vacancy_map.get(vid) if vid else None
-        sheet_name = _safe_sheet_name(v.title if v else "Belgilanmagan", used_names)
-        ws = wb.create_sheet(title=sheet_name)
+        ws = wb.create_sheet(title=_safe_sheet_name(v.title if v else "Belgilanmagan", used_names))
 
         ws.append(EXCEL_HEADERS)
-        for col_idx, _ in enumerate(EXCEL_HEADERS, start=1):
-            cell = ws.cell(row=1, column=col_idx)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_align
-            cell.border = header_border
+        for col_idx in range(1, len(EXCEL_HEADERS) + 1):
+            c = ws.cell(row=1, column=col_idx)
+            c.font, c.fill, c.alignment, c.border = header_font, header_fill, header_align, border
 
-        for tartib, a in enumerate(rows, start=1):
-            yosh = a.age or a.birth_year or ""
+        for pos, a in enumerate(rows, start=1):
             created = ""
             if a.created_at:
-                created = a.created_at.strftime("%Y-%m-%d %H:%M") if isinstance(a.created_at, datetime) else str(a.created_at)
+                created = (a.created_at.strftime("%Y-%m-%d %H:%M")
+                           if isinstance(a.created_at, datetime) else str(a.created_at))
+            total = a.total_score
+            daraja = ("Yuqori" if total is not None and total >= COLOR_GREEN_MIN else
+                      "O'rta" if total is not None and total >= COLOR_YELLOW_MIN else
+                      "Past" if total is not None else "Baholanmagan")
             ws.append([
-                tartib,
+                pos,
                 a.id,
                 created,
+                STATUS_TEXT.get(a.status, a.status or ""),
                 a.full_name or "",
                 a.phone or "",
-                yosh,
+                a.age or a.birth_year or "",
                 a.address or "",
                 a.languages or "",
-                v.title if v else "",
-                a.experience or "",
+                a.test_score if a.test_score is not None else "",
+                a.written_score if a.written_score is not None else "",
+                a.video_score if a.video_score is not None else "",
+                total if total is not None else "",
+                daraja,
+                a.expected_salary or "",
                 a.education or "",
+                a.experience or "",
                 a.additional_skills or "",
-                "Bor" if a.photo_file_id else "—",
-                "Bor" if a.cv_file_id else "—",
+                "Bor" if a.video_file_id else "yo'q",
+                "Bor" if a.photo_file_id else "yo'q",
             ])
+            r = ws.max_row
+            fill = PatternFill(start_color=excel_fill_for(total),
+                               end_color=excel_fill_for(total), fill_type="solid")
+            for col_idx in range(1, len(EXCEL_HEADERS) + 1):
+                c = ws.cell(row=r, column=col_idx)
+                c.fill, c.border = fill, border
+                if col_idx in (1, 2, 7, 10, 11, 12, 13, 14, 19, 20):
+                    c.alignment = center
+            # Jami ball — qalin
+            ws.cell(row=r, column=13).font = Font(bold=True)
+            total_rows += 1
 
-        widths = [8, 10, 18, 26, 16, 6, 22, 22, 22, 30, 18, 30, 8, 8]
+        widths = [6, 8, 17, 18, 24, 15, 6, 18, 16,
+                  9, 10, 9, 10, 13, 16, 16, 30, 28, 7, 7]
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
-        ws.row_dimensions[1].height = 30
-        ws.freeze_panes = "A2"
+        ws.row_dimensions[1].height = 32
+        ws.freeze_panes = "E2"
+        ws.auto_filter.ref = f"A1:{ws.cell(row=1, column=len(EXCEL_HEADERS)).column_letter}{ws.max_row}"
 
     if not wb.sheetnames:
         wb.create_sheet("Arizalar")
@@ -1052,12 +1092,23 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     wb.save(buf)
     buf.seek(0)
 
-    filename = f"arizalar_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"nomzodlar_reyting_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     await bot.send_document(
         callback.from_user.id,
         document=BufferedInputFile(buf.read(), filename=filename),
-        caption=f"📥 Jami {len(apps)} ta ariza, {len(ordered_vids)} ta vakansiya bo'yicha."
+        caption=(
+            f"📊 <b>Nomzodlar reytingi</b>\n\n"
+            f"Jami {total_rows} ta nomzod, {len(ordered_vids)} ta vakansiya "
+            f"(har biri alohida sahifada).\n\n"
+            f"🟩 Yuqori ({COLOR_GREEN_MIN}-{MAX_TOTAL} ball)   "
+            f"🟨 O'rta ({COLOR_YELLOW_MIN}-{COLOR_GREEN_MIN - 1})   "
+            f"🟥 Past (0-{COLOR_YELLOW_MIN - 1})\n"
+            f"⬜️ Baholanmagan — yozma/video bali qo'yilmagan\n\n"
+            f"<i>Har sahifada nomzodlar ball bo'yicha yuqoridan pastga tartiblangan.</i>"
+        ),
+        parse_mode="HTML"
     )
+
 
 
 # ── Adminlar boshqaruvi ────────────────────────────────────────────────────
@@ -1254,7 +1305,7 @@ async def _settings_text() -> str:
 
 @router.callback_query(lambda c: c.data == "admin:settings")
 async def admin_settings(callback: CallbackQuery):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await callback.message.edit_text(await _settings_text(), parse_mode="HTML",
@@ -1264,7 +1315,7 @@ async def admin_settings(callback: CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "settings:channel")
 async def settings_channel_start(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await state.set_state(BotSettingsState.channel)
@@ -1317,7 +1368,7 @@ async def settings_channel_save(message: Message, state: FSMContext, bot: Bot):
 
 @router.callback_query(lambda c: c.data == "settings:instagram")
 async def settings_instagram_start(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await state.set_state(BotSettingsState.instagram)
@@ -1343,7 +1394,7 @@ async def settings_instagram_save(message: Message, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == "settings:clear_channel")
 async def settings_clear_channel(callback: CallbackQuery):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await set_setting("channel_id",   None)
@@ -1357,7 +1408,7 @@ async def settings_clear_channel(callback: CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "settings:apps_group")
 async def settings_apps_group_help(callback: CallbackQuery):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await callback.message.answer(
@@ -1373,7 +1424,7 @@ async def settings_apps_group_help(callback: CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "settings:test_group")
 async def settings_test_group(callback: CallbackQuery, bot: Bot):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     group_id_str = await get_setting("apps_group_id")
@@ -1410,7 +1461,7 @@ async def settings_test_group(callback: CallbackQuery, bot: Bot):
 
 @router.callback_query(lambda c: c.data == "settings:clear_group")
 async def settings_clear_group(callback: CallbackQuery):
-    if callback.from_user.id != SUPER_ADMIN_ID:
+    if not is_hr(await get_role(callback.from_user.id)):
         await callback.answer("❌ Ruxsat yo'q.")
         return
     await set_setting("apps_group_id",    None)
@@ -1424,8 +1475,8 @@ async def settings_clear_group(callback: CallbackQuery):
 
 @router.message(Command("set_apps_group"))
 async def set_apps_group_cmd(message: Message):
-    if message.from_user.id != SUPER_ADMIN_ID:
-        await message.answer("❌ Faqat super admin uchun.")
+    if not is_hr(await get_role(message.from_user.id)):
+        await message.answer("❌ Bu buyruq faqat HR/admin uchun.")
         return
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("⚠️ Bu buyruq faqat guruh ichida ishlaydi.")

@@ -10,3 +10,5 @@ session-*
 userbot_settings.json
 
 bot.db
+
+backups/

@@ -1,3 +1,4 @@
+import html
 import json
 import random
 
@@ -25,11 +26,17 @@ EDUCATION_OPTIONS = ["O'rta", "O'rta maxsus", "Oliy (bakalavr)", "Oliy (magistr)
 CANCEL_BTN = "❌ Bekor qilish"
 SKIP_BTN   = "⏭ O'tkazib yuborish"
 
+LETTERS = ["A", "B", "C", "D", "E"]
+
+
+def esc(v) -> str:
+    """Foydalanuvchi kiritgan matnni HTML uchun xavfsiz qiladi."""
+    return html.escape(str(v)) if v is not None else "—"
+
 
 # ── Yordamchi klaviaturalar ────────────────────────────────────────────────
 
 def cancel_keyboard():
-    """Har bir bosqichda pastda ko'rinadigan bekor qilish tugmasi."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=CANCEL_BTN)]],
         resize_keyboard=True
@@ -37,7 +44,6 @@ def cancel_keyboard():
 
 
 def skip_cancel_keyboard():
-    """O'tkazib yuborish + bekor qilish."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=SKIP_BTN)],
@@ -48,7 +54,6 @@ def skip_cancel_keyboard():
 
 
 def phone_cancel_keyboard():
-    """Telefon + bekor qilish."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)],
@@ -60,15 +65,6 @@ def phone_cancel_keyboard():
 
 def education_keyboard():
     buttons = [[InlineKeyboardButton(text=e, callback_data=f"edu:{e}")] for e in EDUCATION_OPTIONS]
-    buttons.append([InlineKeyboardButton(text=CANCEL_BTN, callback_data="cancel_application")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def vacancy_cancel_keyboard(vacancies):
-    buttons = [
-        [InlineKeyboardButton(text=v.title, callback_data=f"apply:{v.id}")]
-        for v in vacancies
-    ]
     buttons.append([InlineKeyboardButton(text=CANCEL_BTN, callback_data="cancel_application")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -85,7 +81,8 @@ async def cancel_application(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(StateFilter(ApplicationState, ScreeningState), lambda c: c.data == "cancel_application")
+@router.callback_query(StateFilter(ApplicationState, ScreeningState),
+                       lambda c: c.data == "cancel_application")
 async def cancel_application_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer(
@@ -95,98 +92,102 @@ async def cancel_application_cb(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── Vakansiyalar ko'rish ───────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════
+#  1-BOSQICH — avval VAKANSIYA tanlanadi, keyin ma'lumotlar
+# ══════════════════════════════════════════════════════════════════════════
 
-@router.message(F.text == "📋 Mavjud Vakansiyalar")
-async def show_vacancies(message: Message):
-    vacancies = await get_active_vacancies()
-    if not vacancies:
-        await message.answer("Hozircha ochiq vakansiyalar yo'q.")
-        return
-    buttons = [
-        [InlineKeyboardButton(text=f"💼 {v.title}", callback_data=f"vacancy_detail:{v.id}")]
-        for v in vacancies
-    ]
-    await message.answer(
-        "📋 <b>Mavjud vakansiyalar:</b>\nBatafsil ma'lumot uchun bosing:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-    )
-
-
-@router.callback_query(lambda c: c.data.startswith("vacancy_detail:"))
-async def show_vacancy_detail(callback: CallbackQuery):
-    vacancy_id = int(callback.data.split(":")[1])
-    v = await get_vacancy(vacancy_id)
-    if not v:
-        await callback.answer("Vakansiya topilmadi.")
-        return
-    text = (
-        f"💼 <b>{v.title}</b>\n\n"
-        f"📋 <b>Talablar:</b>\n{v.requirements or '—'}\n\n"
-        f"💰 <b>Ish haqi:</b> {v.salary or 'Kelishiladi'}"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Ariza Topshirish", callback_data=f"apply_vacancy:{v.id}")],
-        [InlineKeyboardButton(text="◀️ Ortga", callback_data="back_to_vacancies")]
-    ])
-    await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data == "back_to_vacancies")
-async def back_to_vacancies(callback: CallbackQuery):
-    vacancies = await get_active_vacancies()
-    if not vacancies:
-        await callback.message.answer("Hozircha ochiq vakansiyalar yo'q.")
-        await callback.answer()
-        return
-    buttons = [
-        [InlineKeyboardButton(text=f"💼 {v.title}", callback_data=f"vacancy_detail:{v.id}")]
-        for v in vacancies
-    ]
-    await callback.message.answer(
-        "📋 <b>Mavjud vakansiyalar:</b>\nBatafsil ma'lumot uchun bosing:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-    )
-    await callback.answer()
-
-
-# ── Ariza boshlash ─────────────────────────────────────────────────────────
-
-@router.message(F.text == "📝 Ariza Topshirish")
+@router.message(StateFilter(None), F.text == "📝 Ariza Topshirish")
 async def apply_start_menu(message: Message, state: FSMContext):
     vacancies = await get_active_vacancies()
     if not vacancies:
         await message.answer("Hozircha ochiq vakansiyalar yo'q.")
         return
-    await _start_application(message, state)
+    await state.clear()
+    buttons = [
+        [InlineKeyboardButton(text=f"💼 {v.title}", callback_data=f"apply:{v.id}")]
+        for v in vacancies
+    ]
+    buttons.append([InlineKeyboardButton(text=CANCEL_BTN, callback_data="cancel_pick")])
+    await message.answer(
+        "💼 <b>Qaysi lavozimga ariza topshirasiz?</b>\n\n"
+        "<i>Quyidagi ro'yxatdan tanlang:</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
 
 
-@router.callback_query(lambda c: c.data.startswith("apply_vacancy:"))
-async def apply_from_vacancy(callback: CallbackQuery, state: FSMContext):
-    vacancy_id = int(callback.data.split(":")[1])
-    await state.update_data(vacancy_id=vacancy_id)
-    await _start_application(callback.message, state)
+@router.callback_query(lambda c: c.data == "cancel_pick")
+async def cancel_pick(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer("Bekor qilindi.", reply_markup=main_menu())
     await callback.answer()
 
 
-async def _start_application(message: Message, state: FSMContext):
+@router.callback_query(lambda c: c.data.startswith("apply:"))
+async def apply_pick_vacancy(callback: CallbackQuery, state: FSMContext):
+    """Ro'yxatdan lavozim tanlandi."""
+    try:
+        vacancy_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("Xato tanlov.")
+        return
+    await _begin_application(callback, state, vacancy_id)
+
+
+@router.callback_query(lambda c: c.data.startswith("apply_vacancy:"))
+async def apply_from_announcement(callback: CallbackQuery, state: FSMContext):
+    """E'lon xabaridagi 'Ariza topshirish' tugmasi."""
+    try:
+        vacancy_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("Xato tanlov.")
+        return
+    await _begin_application(callback, state, vacancy_id)
+
+
+async def _begin_application(callback: CallbackQuery, state: FSMContext, vacancy_id: int):
+    v = await get_vacancy(vacancy_id)
+    if not v or not v.active:
+        await callback.answer(
+            "❌ Bu vakansiya yopilgan. Iltimos, boshqa lavozimni tanlang.",
+            show_alert=True
+        )
+        return
+
+    # Bugun shu vakansiyaga topshirilganini BOSHIDA tekshiramiz
+    if await has_applied_today(callback.from_user.id, vacancy_id):
+        await callback.answer(
+            "⚠️ Siz bugun bu lavozimga allaqachon ariza topshirgansiz. Ertaga urinib ko'ring.",
+            show_alert=True
+        )
+        return
+
+    # Eski FSM ma'lumotini tozalab, faqat tanlangan vakansiyani qoldiramiz
+    await state.set_data({"vacancy_id": vacancy_id, "vacancy_title": v.title})
     await state.set_state(ApplicationState.consent)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Ha, roziman", callback_data="appconsent:yes"),
         InlineKeyboardButton(text="❌ Yo'q",        callback_data="appconsent:no"),
     ]])
-    await message.answer(
-        "📝 <b>Ariza topshirish</b>\n\n"
-        "Ariza uchun rahmat! Davom etish uchun biz ism, telefon, ma'lumot va "
+    n_q = await count_vacancy_questions(vacancy_id)
+    steps = ("Jarayon 3 bosqichdan iborat: ma'lumotlar → kasbiy savollar → qisqa video.\n"
+             "Taxminan 10-15 daqiqa vaqt oladi.\n\n") if n_q else ""
+    await callback.message.answer(
+        f"📝 <b>{esc(v.title)}</b> — ariza topshirish\n\n"
+        f"{steps}"
+        "Ariza uchun rahmat! Davom etish uchun ism, telefon, ma'lumot va "
         "maosh kutilmangizni yig'amiz. Ma'lumotlaringiz faqat ishga qabul "
         "jarayonida ishlatiladi.\n\n"
         "Rozimisiz?",
         parse_mode="HTML",
         reply_markup=kb
     )
+    await callback.answer()
 
 
 @router.callback_query(ApplicationState.consent, lambda c: c.data == "appconsent:no")
@@ -215,14 +216,26 @@ async def app_consent_yes(callback: CallbackQuery, state: FSMContext):
 
 # ── 1. Ism-familiya ───────────────────────────────────────────────────────
 
-@router.message(ApplicationState.full_name)
+@router.message(ApplicationState.full_name, F.text)
 async def app_get_name(message: Message, state: FSMContext):
-    await state.update_data(full_name=message.text)
+    name = message.text.strip()
+    if len(name) < 3:
+        await message.answer("⚠️ Ism-familiyangizni to'liq kiriting.", reply_markup=cancel_keyboard())
+        return
+    await state.update_data(full_name=name)
     await state.set_state(ApplicationState.phone)
     await message.answer(
-        "2️⃣ Telefon raqamingizni yuboring:",
+        "2️⃣ Telefon raqamingizni yuboring:\n"
+        "<i>Pastdagi tugma orqali yuborish qulayroq.</i>",
+        parse_mode="HTML",
         reply_markup=phone_cancel_keyboard()
     )
+
+
+@router.message(ApplicationState.full_name)
+async def app_name_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, ism-familiyangizni matn ko'rinishida yozing.",
+                         reply_markup=cancel_keyboard())
 
 
 # ── 2. Telefon ────────────────────────────────────────────────────────────
@@ -235,8 +248,25 @@ async def app_get_phone_contact(message: Message, state: FSMContext):
 
 @router.message(ApplicationState.phone, F.text)
 async def app_get_phone_text(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
+    raw = message.text.strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not (7 <= len(digits) <= 15):
+        await message.answer(
+            "⚠️ Telefon raqami noto'g'ri.\n"
+            "<i>Masalan: +998901234567</i>\n"
+            "Yoki pastdagi tugma orqali yuboring.",
+            parse_mode="HTML",
+            reply_markup=phone_cancel_keyboard()
+        )
+        return
+    await state.update_data(phone=raw)
     await _ask_age(message, state)
+
+
+@router.message(ApplicationState.phone)
+async def app_phone_wrong(message: Message):
+    await message.answer("⚠️ Telefon raqamini yuboring yoki pastdagi tugmani bosing.",
+                         reply_markup=phone_cancel_keyboard())
 
 
 # ── 3. Yosh ───────────────────────────────────────────────────────────────
@@ -250,12 +280,12 @@ async def _ask_age(message: Message, state: FSMContext):
     )
 
 
-@router.message(ApplicationState.age)
+@router.message(ApplicationState.age, F.text)
 async def app_get_age(message: Message, state: FSMContext):
     text = message.text.strip()
-    if not text.isdigit() or not (10 <= int(text) <= 90):
+    if not text.isdigit() or not (16 <= int(text) <= 70):
         await message.answer(
-            "⚠️ Yoshingizni faqat raqam bilan kiriting.\n<i>Masalan: 25</i>",
+            "⚠️ Yoshingizni faqat raqam bilan kiriting (16-70).\n<i>Masalan: 25</i>",
             parse_mode="HTML",
             reply_markup=cancel_keyboard()
         )
@@ -269,11 +299,16 @@ async def app_get_age(message: Message, state: FSMContext):
     )
 
 
+@router.message(ApplicationState.age)
+async def app_age_wrong(message: Message):
+    await message.answer("⚠️ Yoshingizni raqam bilan yozing.", reply_markup=cancel_keyboard())
+
+
 # ── 4. Qayerdan ───────────────────────────────────────────────────────────
 
-@router.message(ApplicationState.address)
+@router.message(ApplicationState.address, F.text)
 async def app_get_address(message: Message, state: FSMContext):
-    await state.update_data(address=message.text)
+    await state.update_data(address=message.text.strip())
     await state.set_state(ApplicationState.languages)
     await message.answer(
         "5️⃣ Qaysi tillarni bilasiz?\n"
@@ -283,61 +318,55 @@ async def app_get_address(message: Message, state: FSMContext):
     )
 
 
+@router.message(ApplicationState.address)
+async def app_address_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, matn ko'rinishida yozing.", reply_markup=cancel_keyboard())
+
+
 # ── 5. Tillar ─────────────────────────────────────────────────────────────
 
-@router.message(ApplicationState.languages)
+@router.message(ApplicationState.languages, F.text)
 async def app_get_languages(message: Message, state: FSMContext):
-    await state.update_data(languages=message.text)
-    await _ask_vacancy_step(message, state)
+    await state.update_data(languages=message.text.strip())
+    await _ask_past_work(message, state)
 
 
-# ── 6. Lavozim ────────────────────────────────────────────────────────────
-
-async def _ask_vacancy_step(message: Message, state: FSMContext):
-    data = await state.get_data()
-    if data.get("vacancy_id"):
-        await _ask_past_work(message, state)
-        return
-    vacancies = await get_active_vacancies()
-    await state.set_state(ApplicationState.vacancy)
-    await message.answer(
-        "6️⃣ Qanday kasbda ishlamoqchisiz?",
-        reply_markup=vacancy_cancel_keyboard(vacancies)
-    )
+@router.message(ApplicationState.languages)
+async def app_languages_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, matn ko'rinishida yozing.", reply_markup=cancel_keyboard())
 
 
-@router.callback_query(ApplicationState.vacancy, lambda c: c.data.startswith("apply:"))
-async def app_get_vacancy(callback: CallbackQuery, state: FSMContext):
-    vacancy_id = int(callback.data.split(":")[1])
-    await state.update_data(vacancy_id=vacancy_id)
-    await _ask_past_work(callback.message, state)
-    await callback.answer()
-
-
-# ── 7. Qayerda ishlagan ───────────────────────────────────────────────────
+# ── 6. Qayerda ishlagan ───────────────────────────────────────────────────
 
 async def _ask_past_work(message: Message, state: FSMContext):
     await state.set_state(ApplicationState.past_work)
     await message.answer(
-        "7️⃣ Ilgari qayerda ishlagansiz?\n"
-        "<i>(Tashkilot nomi, lavozim, davri. Tajribangiz bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
+        "6️⃣ Ilgari qayerda ishlagansiz?\n"
+        "<i>(Tashkilot nomi, lavozim, davri. Tajribangiz bo'lmasa "
+        "\"O'tkazib yuborish\" tugmasini bosing.)</i>",
         parse_mode="HTML",
         reply_markup=skip_cancel_keyboard()
     )
 
 
-@router.message(ApplicationState.past_work)
+@router.message(ApplicationState.past_work, F.text)
 async def app_get_past_work(message: Message, state: FSMContext):
-    value = None if message.text == SKIP_BTN else message.text
+    value = None if message.text == SKIP_BTN else message.text.strip()
     await state.update_data(past_work=value)
     await state.set_state(ApplicationState.education)
     await message.answer(
-        "8️⃣ Ma'lumotingizni tanlang:",
+        "7️⃣ Ma'lumotingizni tanlang:",
         reply_markup=education_keyboard()
     )
 
 
-# ── 8. Ma'lumot ───────────────────────────────────────────────────────────
+@router.message(ApplicationState.past_work)
+async def app_past_work_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, matn yozing yoki tugmani bosing.",
+                         reply_markup=skip_cancel_keyboard())
+
+
+# ── 7. Ma'lumot ───────────────────────────────────────────────────────────
 
 @router.callback_query(ApplicationState.education, lambda c: c.data.startswith("edu:"))
 async def app_get_education(callback: CallbackQuery, state: FSMContext):
@@ -345,8 +374,8 @@ async def app_get_education(callback: CallbackQuery, state: FSMContext):
     await state.update_data(education=edu)
     await state.set_state(ApplicationState.additional_skills)
     await callback.message.answer(
-        "9️⃣ Qo'shimcha bilim va ko'nikmalaringiz bormi?\n"
-        "<i>(Masalan: kompyuter dasturlari, haydovchilik guvohnomasi, sertifikatlar va h.k. "
+        "8️⃣ Qo'shimcha bilim va ko'nikmalaringiz bormi?\n"
+        "<i>(Masalan: kompyuter dasturlari, haydovchilik guvohnomasi, sertifikatlar. "
         "Bo'lmasa \"O'tkazib yuborish\" tugmasini bosing.)</i>",
         parse_mode="HTML",
         reply_markup=skip_cancel_keyboard()
@@ -354,20 +383,28 @@ async def app_get_education(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── 9. Qo'shimcha ko'nikmalar ─────────────────────────────────────────────
+# ── 8. Qo'shimcha ko'nikmalar ─────────────────────────────────────────────
 
-@router.message(ApplicationState.additional_skills)
+@router.message(ApplicationState.additional_skills, F.text)
 async def app_get_additional_skills(message: Message, state: FSMContext):
-    value = None if message.text == SKIP_BTN else message.text
+    value = None if message.text == SKIP_BTN else message.text.strip()
     await state.update_data(additional_skills=value)
     await state.set_state(ApplicationState.photo)
     await message.answer(
-        "🔟 O'zingizning rasmingizni yuboring.",
+        "9️⃣ O'zingizning rasmingizni yuboring.\n"
+        "<i>Rasm HR uchun ariza kartochkasida ko'rinadi.</i>",
+        parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
 
 
-# ── 10. Rasm — yakuniy qadam ──────────────────────────────────────────────
+@router.message(ApplicationState.additional_skills)
+async def app_skills_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, matn yozing yoki tugmani bosing.",
+                         reply_markup=skip_cancel_keyboard())
+
+
+# ── 9. Rasm ───────────────────────────────────────────────────────────────
 
 @router.message(ApplicationState.photo, F.photo)
 async def app_get_photo(message: Message, state: FSMContext, bot: Bot):
@@ -377,55 +414,54 @@ async def app_get_photo(message: Message, state: FSMContext, bot: Bot):
 
 @router.message(ApplicationState.photo)
 async def app_photo_wrong(message: Message):
-    await message.answer(
-        "❌ Iltimos, rasm yuboring.",
-        reply_markup=cancel_keyboard()
-    )
+    await message.answer("❌ Iltimos, rasm yuboring.", reply_markup=cancel_keyboard())
 
 
-# ── 11. Kutgan maosh ──────────────────────────────────────────────────────
+# ── 10. Kutgan maosh ──────────────────────────────────────────────────────
 
 async def _ask_expected_salary(message: Message, state: FSMContext):
     await state.set_state(ApplicationState.expected_salary)
     await message.answer(
-        "1️⃣1️⃣ Kutgan oylik maoshingizni yozing:\n"
+        "🔟 Kutgan oylik maoshingizni yozing:\n"
         "<i>(Masalan: 5 000 000 so'm yoki Kelishiladi)</i>",
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
 
 
-@router.message(ApplicationState.expected_salary)
+@router.message(ApplicationState.expected_salary, F.text)
 async def app_get_salary(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(expected_salary=message.text.strip())
     await _create_and_route(message, state, bot)
 
 
-# ── Arizani yaratish va oqimni yo'naltirish ────────────────────────────────
+@router.message(ApplicationState.expected_salary)
+async def app_salary_wrong(message: Message):
+    await message.answer("⚠️ Iltimos, matn ko'rinishida yozing.", reply_markup=cancel_keyboard())
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Arizani yaratish va oqimni yo'naltirish
+# ══════════════════════════════════════════════════════════════════════════
 
 async def _create_and_route(message: Message, state: FSMContext, bot: Bot):
-    """1-bosqich tugadi: arizani yaratadi. Vakansiyada savol bo'lsa 2-bosqichga
-    o'tadi, aks holda darhol yakunlaydi (eski xatti-harakat)."""
     data = await state.get_data()
-
-    if await has_applied_today(message.from_user.id, data["vacancy_id"]):
+    vacancy_id = data.get("vacancy_id")
+    if not vacancy_id:
         await state.clear()
-        await message.answer(
-            "⚠️ Siz bugun bu vakansiyaga allaqachon ariza topshirgansiz.\n"
-            "Ertaga qayta urinib ko'ring.",
-            reply_markup=main_menu()
-        )
+        await message.answer("⚠️ Ariza ma'lumoti yo'qoldi. Iltimos, qaytadan boshlang.",
+                             reply_markup=main_menu())
         return
 
     app = await create_application(
         user_id=message.from_user.id,
-        full_name=data["full_name"],
-        phone=data["phone"],
+        full_name=data.get("full_name"),
+        phone=data.get("phone"),
         address=data.get("address"),
         age=data.get("age"),
         languages=data.get("languages"),
         education=data.get("education"),
-        vacancy_id=data["vacancy_id"],
+        vacancy_id=vacancy_id,
         experience=data.get("past_work"),
         additional_skills=data.get("additional_skills"),
         photo_file_id=data.get("photo_file_id"),
@@ -434,90 +470,37 @@ async def _create_and_route(message: Message, state: FSMContext, bot: Bot):
     await update_application(app.id, expected_salary=data.get("expected_salary"), stage="stage1")
     await state.update_data(app_id=app.id)
 
-    n_questions = await count_vacancy_questions(data["vacancy_id"])
+    n_questions = await count_vacancy_questions(vacancy_id)
     if n_questions == 0:
-        # Savol yo'q — eski oddiy oqim (rasm bilan xabar, guruhga yuborish)
+        # Savol biriktirilmagan vakansiya — oddiy ariza
         await _finish_simple(message, state, bot)
         return
 
-    # Savol bor — 2-bosqichga o'tamiz (neytral xabar)
     await message.answer(
-        "Ma'lumotlaringiz uchun rahmat! Endi kasbiy savollarga o'tamiz — "
-        "bu bir necha daqiqa vaqt oladi.\n"
-        "<i>Bekor qilish uchun pastdagi tugmadan foydalaning.</i>",
+        "✅ Ma'lumotlaringiz uchun rahmat!\n\n"
+        "Endi <b>2-bosqich</b> — kasbiy savollarga o'tamiz. "
+        "Bu bir necha daqiqa vaqt oladi.",
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
     await state.update_data(t_idx=0, w_idx=0)
+    await update_application(app.id, stage="stage2")
     await _present_test(message, state, bot)
 
 
 async def _finish_simple(message: Message, state: FSMContext, bot: Bot):
-    """Savolsiz vakansiya uchun: darhol yakunlash + adminlar/guruhga rasm bilan xabar."""
     data = await state.get_data()
     await update_application(data["app_id"], stage="done", status="submitted")
     await state.clear()
 
     vacancy = await get_vacancy(data["vacancy_id"])
     await message.answer(
-        "✅ <b>Arizangiz muvaffaqiyatli qabul qilindi!</b>\n\n"
-        "Tez orada siz bilan bog'lanamiz.",
+        "✅ <b>Arizangiz qabul qilindi!</b>\n\n"
+        "Natija bo'yicha HR mutaxassisimiz siz bilan tez orada bog'lanadi.",
         parse_mode="HTML",
         reply_markup=main_menu()
     )
-    notify_text = (
-        f"🔔 <b>Yangi ariza!</b>\n\n"
-        f"👤 Ism: {data['full_name']}\n"
-        f"📱 Tel: {data['phone']}\n"
-        f"🎂 Yosh: {data.get('age') or '—'}\n"
-        f"📍 Qayerdan: {data.get('address') or '—'}\n"
-        f"🗣 Tillar: {data.get('languages') or '—'}\n"
-        f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
-        f"💰 Kutgan maosh: {data.get('expected_salary') or '—'}\n"
-        f"🏢 Ish tajribasi: {data.get('past_work') or '—'}\n"
-        f"🎓 Ma'lumot: {data.get('education') or '—'}\n"
-        f"✨ Qo'shimcha ko'nikmalar: {data.get('additional_skills') or '—'}"
-    )
-    await _notify_admins_and_group(bot, notify_text, data.get("photo_file_id"))
-
-
-async def _notify_admins_and_group(bot: Bot, notify_text: str, photo_id: str | None):
-    """Yangi ariza/nomzod haqida adminlar va arizalar guruhini xabardor qiladi."""
-    from app.config import SUPER_ADMIN_ID
-    from app.database.crud import get_setting
-    from app.utils import send_to_group
-
-    admins = await get_all_admins()
-    notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
-    for chat_id in notify_ids:
-        try:
-            if photo_id:
-                await bot.send_photo(chat_id, photo=photo_id, caption=notify_text, parse_mode="HTML")
-            else:
-                await bot.send_message(chat_id, notify_text, parse_mode="HTML")
-        except Exception:
-            pass
-
-    group_id_str = await get_setting("apps_group_id")
-    if group_id_str:
-        try:
-            gid = int(group_id_str)
-        except ValueError:
-            gid = None
-        if gid is not None:
-            ok, err = await send_to_group(bot, gid, text=notify_text, photo_id=photo_id)
-            if not ok:
-                try:
-                    await bot.send_message(
-                        SUPER_ADMIN_ID,
-                        f"⚠️ <b>Guruhga yuborilmadi!</b>\n"
-                        f"Guruh ID: <code>{gid}</code>\n"
-                        f"Xato: <code>{err}</code>\n\n"
-                        f"<i>Botni guruhga qo'shing yoki Sozlamalar → Arizalar guruhini qayta o'rnating.</i>",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
+    await _notify_new_candidate(bot, data["app_id"])
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -535,6 +518,11 @@ async def _present_test(message: Message, state: FSMContext, bot: Bot):
 
     q = questions[t_idx]
     options = json.loads(q.options) if q.options else []
+    if not options:
+        await state.update_data(t_idx=t_idx + 1)
+        await _present_test(message, state, bot)
+        return
+
     order = list(range(len(options)))
     random.shuffle(order)
     scores = [options[i]["score"] for i in order]
@@ -546,23 +534,41 @@ async def _present_test(message: Message, state: FSMContext, bot: Bot):
     )
     await state.set_state(ScreeningState.test)
 
-    buttons = [[InlineKeyboardButton(text=t, callback_data=f"scr_t:{pos}")]
-               for pos, t in enumerate(texts)]
+    # Variant matnlari uzun — ular XABAR ichida ko'rsatiladi,
+    # tugmalarda faqat harf (A/B/C) turadi. Aks holda matn tugmaga sig'maydi.
+    body = "\n\n".join(f"<b>{LETTERS[i]})</b> {esc(t)}" for i, t in enumerate(texts))
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=LETTERS[i], callback_data=f"scr_t:{i}")
+        for i in range(len(texts))
+    ]])
     await message.answer(
-        f"📝 <b>Test savoli {t_idx + 1}</b>\n\n{q.text}",
+        f"🧠 <b>Test savoli {t_idx + 1}/{len(questions)}</b>\n\n"
+        f"{esc(q.text)}\n\n{body}\n\n"
+        f"<i>Javobingizni tanlang:</i>",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        reply_markup=kb
     )
 
 
 @router.callback_query(ScreeningState.test, lambda c: c.data.startswith("scr_t:"))
 async def screening_test_answer(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    pos = int(callback.data.split(":")[1])
+    try:
+        pos = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("Xato tanlov.")
+        return
+
     data = await state.get_data()
     scores = data.get("cur_scores", [])
     texts  = data.get("cur_texts", [])
     if pos < 0 or pos >= len(scores):
         await callback.answer("Xato tanlov.")
+        return
+
+    # Takroriy bosishdan himoya: shu savolga javob allaqachon yozilganmi?
+    answers = await get_application_answers(data["app_id"])
+    if any(a.question_id == data.get("cur_qid") for a in answers):
+        await callback.answer("Bu savolga javob berilgan.")
         return
 
     await create_answer(
@@ -571,10 +577,10 @@ async def screening_test_answer(callback: CallbackQuery, state: FSMContext, bot:
         question_text=data.get("cur_qtext"), answer_text=texts[pos],
         score=scores[pos], max_score=3,
     )
-    # Tanlangan variantni ko'rsatib qo'yamiz (ball ko'rsatilmaydi)
     try:
         await callback.message.edit_text(
-            f"📝 {data.get('cur_qtext')}\n\n✅ Javobingiz: <i>{texts[pos]}</i>",
+            f"🧠 {esc(data.get('cur_qtext'))}\n\n"
+            f"✅ <b>Javobingiz:</b> {LETTERS[pos]}) {esc(texts[pos])}",
             parse_mode="HTML"
         )
     except Exception:
@@ -595,13 +601,12 @@ async def _present_written(message: Message, state: FSMContext, bot: Bot):
         return
 
     q = questions[w_idx]
-    await state.update_data(
-        w_idx=w_idx, cur_qid=q.id, cur_qtext=q.text, cur_order=q.order_num,
-    )
+    await state.update_data(w_idx=w_idx, cur_qid=q.id, cur_qtext=q.text, cur_order=q.order_num)
     await state.set_state(ScreeningState.written)
     await message.answer(
-        f"✍️ <b>Yozma savol {w_idx + 1}</b>\n\n{q.text}\n\n"
-        "<i>Javobingizni matn ko'rinishida yozing.</i>",
+        f"✍️ <b>Yozma savol {w_idx + 1}/{len(questions)}</b>\n\n"
+        f"{esc(q.text)}\n\n"
+        "<i>Javobingizni bitta xabar qilib yozing.</i>",
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
@@ -609,14 +614,19 @@ async def _present_written(message: Message, state: FSMContext, bot: Bot):
 
 @router.message(ScreeningState.written, F.text)
 async def screening_written_answer(message: Message, state: FSMContext, bot: Bot):
-    if message.text == CANCEL_BTN:
-        return  # cancel_application handler ushlaydi
+    text = message.text.strip()
+    if len(text) < 10:
+        await message.answer(
+            "⚠️ Javobingiz juda qisqa. Iltimos, biroz batafsilroq yozing.",
+            reply_markup=cancel_keyboard()
+        )
+        return
     data = await state.get_data()
     await create_answer(
         application_id=data["app_id"], question_id=data.get("cur_qid"),
         qtype="written", order_num=data.get("cur_order", 0),
-        question_text=data.get("cur_qtext"), answer_text=message.text,
-        score=None, max_score=3,   # HR/AI keyin baholaydi
+        question_text=data.get("cur_qtext"), answer_text=text,
+        score=None, max_score=3,
     )
     await state.update_data(w_idx=data.get("w_idx", 0) + 1)
     await _present_written(message, state, bot)
@@ -624,29 +634,32 @@ async def screening_written_answer(message: Message, state: FSMContext, bot: Bot
 
 @router.message(ScreeningState.written)
 async def screening_written_wrong(message: Message):
-    await message.answer(
-        "❌ Iltimos, javobingizni matn ko'rinishida yozing.",
-        reply_markup=cancel_keyboard()
-    )
+    await message.answer("⚠️ Iltimos, javobingizni matn ko'rinishida yozing.",
+                         reply_markup=cancel_keyboard())
 
 
 # ══════════════════════════════════════════════════════════════════════════
-#  3-BOSQICH — Video-vizitka
+#  3-BOSQICH — MAJBURIY video
 # ══════════════════════════════════════════════════════════════════════════
 
 async def _ask_video(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    await update_application(data["app_id"], stage="stage3")
     await state.set_state(ScreeningState.video)
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=SKIP_BTN)], [KeyboardButton(text=CANCEL_BTN)]],
-        resize_keyboard=True
-    )
+
+    vqs = await get_vacancy_questions(data["vacancy_id"], qtype="video")
+    video_q = vqs[0].text if vqs else "Nega aynan shu lavozimda ishlamoqchisiz?"
+
     await message.answer(
-        "🎥 <b>3-bosqich — Video-vizitka</b>\n\n"
-        "40 soniyadan 1 daqiqagacha qisqa video yuboring: o'zingiz va nima uchun "
-        "shu sohada ishlamoqchi ekaningiz haqida qisqacha gapiring.\n\n"
-        "<i>Hozir imkoniyat bo'lmasa, «⏭ O'tkazib yuborish» tugmasini bosing.</i>",
+        "🎥 <b>Oxirgi bosqich — qisqa video (30-60 soniya)</b>\n\n"
+        "Avval o'zingizni qisqacha tanishtiring (~10 soniya), so'ng savolga javob bering:\n\n"
+        f"❓ <b>{esc(video_q)}</b>\n\n"
+        "🔵 Xohlasangiz <b>yumaloq video-xabar</b>, xohlasangiz <b>oddiy video</b> "
+        "yuborishingiz mumkin — ikkalasi ham bo'ladi.\n\n"
+        "⚠️ <b>Video majburiy.</b> Videosiz arizangiz HR mutaxassisiga "
+        "yuborilmaydi va ko'rib chiqilmaydi.",
         parse_mode="HTML",
-        reply_markup=kb
+        reply_markup=cancel_keyboard()
     )
 
 
@@ -662,24 +675,28 @@ async def screening_get_video_note(message: Message, state: FSMContext, bot: Bot
                               video_file_id=message.video_note.file_id, is_note=True)
 
 
-@router.message(ScreeningState.video, F.text == SKIP_BTN)
-async def screening_skip_video(message: Message, state: FSMContext, bot: Bot):
-    await _finalize_screening(message, state, bot, video_file_id=None, is_note=False)
-
-
 @router.message(ScreeningState.video)
 async def screening_video_wrong(message: Message):
     await message.answer(
-        "❌ Iltimos, video yuboring yoki «⏭ O'tkazib yuborish» tugmasini bosing.",
+        "❌ Bu video emas.\n\n"
+        "Iltimos, <b>video</b> yoki <b>yumaloq video-xabar</b> yuboring "
+        "(30-60 soniya).\n\n"
+        "⚠️ Videosiz arizangiz HRga yuborilmaydi.",
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard()
     )
 
 
 async def _finalize_screening(message: Message, state: FSMContext, bot: Bot,
-                              video_file_id: str | None, is_note: bool):
+                              video_file_id: str, is_note: bool):
     data = await state.get_data()
-    app_id = data["app_id"]
+    app_id = data.get("app_id")
+    if not app_id:
+        await state.clear()
+        await message.answer("⚠️ Ariza ma'lumoti yo'qoldi. Qaytadan boshlang.",
+                             reply_markup=main_menu())
+        return
 
-    # Test balini hisoblaymiz
     answers = await get_application_answers(app_id)
     test_score = sum((a.score or 0) for a in answers if a.qtype == "test")
 
@@ -700,18 +717,75 @@ async def _finalize_screening(message: Message, state: FSMContext, bot: Bot,
         parse_mode="HTML",
         reply_markup=main_menu()
     )
+    await _notify_new_candidate(bot, app_id)
 
-    vacancy = await get_vacancy(data["vacancy_id"])
-    video_line = "✅ bor" if video_file_id else "❌ yo'q"
-    notify_text = (
-        f"🆕 <b>Yangi nomzod saralashdan o'tdi!</b>\n\n"
-        f"👤 Ism: {data['full_name']}\n"
-        f"📱 Tel: {data['phone']}\n"
-        f"💼 Lavozim: {vacancy.title if vacancy else '—'}\n"
-        f"💰 Kutgan maosh: {data.get('expected_salary') or '—'}\n"
-        f"🧪 Test bali: <b>{test_score}/9</b>\n"
-        f"🎥 Video: {video_line}\n\n"
-        f"<i>Yozma javoblar va video HR panelda baholanadi.\n"
-        f"Ariza №{app_id}</i>"
+
+# ══════════════════════════════════════════════════════════════════════════
+#  HR va guruhga xabar — harakat tugmalari bilan
+# ══════════════════════════════════════════════════════════════════════════
+
+async def _notify_new_candidate(bot: Bot, app_id: int):
+    """Yangi nomzod haqida adminlar va arizalar guruhini xabardor qiladi.
+    Xabar ostida to'g'ridan-to'g'ri harakat tugmalari bo'ladi."""
+    from app.config import SUPER_ADMIN_ID
+    from app.database.crud import get_setting, get_application
+    from app.keyboards.inline import candidate_actions_keyboard
+    from app.utils import send_to_group
+
+    app = await get_application(app_id)
+    if not app:
+        return
+    vacancy = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
+
+    text = (
+        f"🆕 <b>Yangi nomzod</b> — ariza #{app.id}\n\n"
+        f"👤 <a href=\"tg://user?id={app.user_id}\">{esc(app.full_name)}</a>\n"
+        f"📱 {esc(app.phone)}\n"
+        f"💼 {esc(vacancy.title if vacancy else '—')}\n"
+        f"🎂 Yosh: {esc(app.age)}\n"
+        f"📍 {esc(app.address)}\n"
+        f"🗣 {esc(app.languages)}\n"
+        f"🎓 {esc(app.education)}\n"
+        f"🏢 Tajriba: {esc(app.experience)}\n"
+        f"✨ Ko'nikmalar: {esc(app.additional_skills)}\n"
+        f"💰 Kutgan maosh: {esc(app.expected_salary)}\n"
     )
-    await _notify_admins_and_group(bot, notify_text, data.get("photo_file_id"))
+    if app.test_score is not None:
+        text += f"\n🧠 <b>Test bali: {app.test_score}/9</b>"
+    text += "\n\n<i>Quyidagi tugmalar orqali boshqaring:</i>"
+
+    kb = candidate_actions_keyboard(app)
+
+    # 1) Adminlar (shaxsiy chat)
+    admins = await get_all_admins()
+    notify_ids = {a.telegram_id for a in admins} | {SUPER_ADMIN_ID}
+    for chat_id in notify_ids:
+        try:
+            if app.photo_file_id:
+                await bot.send_photo(chat_id, photo=app.photo_file_id,
+                                     caption=text, parse_mode="HTML", reply_markup=kb)
+            else:
+                await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            pass
+
+    # 2) Arizalar guruhi
+    group_id_str = await get_setting("apps_group_id")
+    if not group_id_str:
+        return
+    try:
+        gid = int(group_id_str)
+    except ValueError:
+        return
+    ok, err = await send_to_group(bot, gid, text=text,
+                                  photo_id=app.photo_file_id, reply_markup=kb)
+    if not ok:
+        try:
+            await bot.send_message(
+                SUPER_ADMIN_ID,
+                f"⚠️ <b>Guruhga yuborilmadi!</b>\n"
+                f"Guruh ID: <code>{gid}</code>\nXato: <code>{esc(err)}</code>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass

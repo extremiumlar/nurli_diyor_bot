@@ -6,7 +6,8 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
 
 async def send_to_group(bot: Bot, group_id: int, text: str | None = None,
-                        photo_id: str | None = None) -> tuple[bool, str | None]:
+                        photo_id: str | None = None,
+                        reply_markup=None) -> tuple[bool, str | None]:
     """Guruhga xabar (yoki rasm+caption) yuboradi.
 
     Superguruhga migratsiya bo'lsa (chat ID o'zgargan bo'lsa) yangi ID ga
@@ -17,9 +18,11 @@ async def send_to_group(bot: Bot, group_id: int, text: str | None = None,
 
     async def _do(gid: int):
         if photo_id:
-            await bot.send_photo(gid, photo=photo_id, caption=text, parse_mode="HTML")
+            await bot.send_photo(gid, photo=photo_id, caption=text,
+                                 parse_mode="HTML", reply_markup=reply_markup)
         else:
-            await bot.send_message(gid, text, parse_mode="HTML")
+            await bot.send_message(gid, text, parse_mode="HTML",
+                                   reply_markup=reply_markup)
 
     try:
         await _do(group_id)

@@ -321,6 +321,11 @@ async def create_application(user_id: int, full_name: str, phone: str,
 
 
 async def has_applied_today(user_id: int, vacancy_id: int) -> bool:
+    """Bugun shu vakansiyaga TUGATILGAN ariza topshirilganmi.
+
+    Tugatilmagan (in_progress) arizalar hisobga olinmaydi — aks holda
+    nomzod oqimni yarmida tashlab ketsa, shu kuni qayta topshira olmay qoladi.
+    """
     from datetime import date
     from sqlalchemy import func
     async with async_session() as session:
@@ -329,6 +334,7 @@ async def has_applied_today(user_id: int, vacancy_id: int) -> bool:
             select(Application).where(
                 Application.user_id == user_id,
                 Application.vacancy_id == vacancy_id,
+                Application.status != "in_progress",
                 func.date(Application.created_at) == today
             )
         )
@@ -490,6 +496,14 @@ async def set_questions_from_bank(vacancy_id: int, bank_key: str) -> int:
                 text=w["text"], rubric=w.get("rubric"),
             ))
             added += 1
+        # 3-bosqich: rolga xos majburiy video-savol
+        if tmpl.get("video"):
+            from app.question_bank import VIDEO_RUBRIC
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="video", order_num=1,
+                text=tmpl["video"], rubric=VIDEO_RUBRIC,
+            ))
+            added += 1
         await session.commit()
         return added
 
@@ -565,32 +579,3 @@ async def recompute_scores(app_id: int):
         await session.commit()
         await session.refresh(app)
         return app
-
-
-async def get_screening_counts(vacancy_id: int) -> dict:
-    """Vakansiya bo'yicha holat sanoqlari (submitted/approved/rejected)."""
-    async with async_session() as session:
-        result = await session.execute(
-            select(Application.status, func.count())
-            .where(Application.vacancy_id == vacancy_id,
-                   Application.status.in_(("submitted", "approved", "rejected")))
-            .group_by(Application.status)
-        )
-        return {row[0]: row[1] for row in result.fetchall()}
-
-
-async def get_ranked_applications(vacancy_id: int | None = None, status: str | None = None):
-    """Reyting bo'yicha (total_score kamayish tartibida) arizalar."""
-    async with async_session() as session:
-        q = select(Application)
-        if vacancy_id:
-            q = q.where(Application.vacancy_id == vacancy_id)
-        if status:
-            q = q.where(Application.status == status)
-        q = q.order_by(
-            Application.total_score.is_(None),      # ballanmaganlar oxirida
-            Application.total_score.desc(),
-            Application.created_at.desc(),
-        )
-        result = await session.execute(q)
-        return result.scalars().all()
