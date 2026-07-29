@@ -121,15 +121,22 @@ async def vq_set(callback: CallbackQuery):
     await callback.answer("Biriktirildi ✅")
 
 
-@router.callback_query(lambda c: c.data == "vq:autoall")
+@router.callback_query(lambda c: c.data in ("vq:autoall", "vq:autoall:force"))
 async def vq_auto_all(callback: CallbackQuery):
+    """Barcha vakansiyaga nomiga qarab savol biriktiradi.
+
+    vq:autoall        — faqat savoli YO'Q vakansiyalarga
+    vq:autoall:force  — HAMMASINI eng yangi shablon bilan qayta yozadi
+    """
     if not await _guard(callback):
         return
+    force = callback.data.endswith(":force")
     await callback.answer("Biriktirilmoqda…")
     vacancies = await get_all_vacancies()
     attached, skipped, unmatched = [], [], []
     for v in vacancies:
-        if await count_vacancy_questions(v.id) > 0:
+        has_q = await count_vacancy_questions(v.id) > 0
+        if has_q and not force:
             skipped.append(v.title)
             continue
         key = match_bank_key(v.title)
@@ -139,22 +146,24 @@ async def vq_auto_all(callback: CallbackQuery):
         await set_questions_from_bank(v.id, key)
         attached.append(f"{v.title} → {QUESTION_BANK[key]['title']}")
 
-    lines = ["🤖 <b>Avtomatik biriktirish natijasi</b>\n"]
+    head = ("🔄 <b>Savollar yangilandi</b>" if force else "🤖 <b>Avtomatik biriktirish</b>")
+    lines = [head + "\n"]
     if attached:
-        lines.append("✅ <b>Biriktirildi:</b>")
+        lines.append(f"✅ <b>{len(attached)} ta vakansiya</b> "
+                     f"(3 test + 2 yozma + 1 video):")
         lines += [f"• {esc(x)}" for x in attached]
         lines.append("")
     if skipped:
-        lines.append("⏭ <b>Savoli bor (o'tkazildi):</b>")
+        lines.append(f"⏭ <b>Savoli bor — o'tkazildi ({len(skipped)}):</b>")
         lines += [f"• {esc(x)}" for x in skipped]
-        lines.append("")
+        lines.append("<i>Yangilash uchun «🔄 Savollarni yangilash» tugmasidan foydalaning.</i>\n")
     if unmatched:
-        lines.append("⚠️ <b>Mos topilmadi (qo'lda biriktiring):</b>")
+        lines.append(f"⚠️ <b>Mos topilmadi ({len(unmatched)}) — qo'lda biriktiring:</b>")
         lines += [f"• {esc(x)}" for x in unmatched]
         lines.append("\n<i>Vakansiya → 📝 Savollar → 📋 Shablondan yuklash.</i>")
     if not vacancies:
         lines.append("Vakansiya yo'q.")
-    await callback.message.answer("\n".join(lines), parse_mode="HTML")
+    await _send_long(callback.bot, callback.from_user.id, "\n".join(lines))
 
 
 @router.callback_query(lambda c: c.data.startswith("vq:clear:"))
