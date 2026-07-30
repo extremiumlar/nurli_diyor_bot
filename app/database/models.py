@@ -123,6 +123,7 @@ class Application(Base):
     video_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     video_is_note: Mapped[bool] = mapped_column(Boolean, default=False)         # video_note (dumaloq) yoki oddiy video
     hr_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)  # AI umumiy xulosasi
     reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reviewed_at: Mapped[str | None] = mapped_column(DateTime, nullable=True)
 

@@ -54,6 +54,15 @@ def _app_id(callback: CallbackQuery, pos: int = 2) -> int | None:
         return None
 
 
+def _ai_on() -> bool:
+    """AI baholash yoqilganmi (ANTHROPIC_API_KEY bor va paket o'rnatilgan)."""
+    try:
+        from app.ai_grader import is_enabled
+        return is_enabled()
+    except Exception:
+        return False
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #  Vakansiya savollarini biriktirish
 # ══════════════════════════════════════════════════════════════════════════
@@ -277,9 +286,62 @@ async def cd_written(callback: CallbackQuery, bot: Bot):
         sc = f"{a.score}/3" if a.score is not None else "⚠️ baholanmagan"
         lines.append(f"<b>{i}.</b> {esc(a.question_text)}")
         lines.append(f"<i>{esc(a.answer_text)}</i>")
-        lines.append(f"➡️ {sc}\n")
+        lines.append(f"➡️ <b>{sc}</b>")
+        if a.ai_feedback:
+            # AI izohi allaqachon HTML formatida saqlangan
+            lines.append(a.ai_feedback)
+        lines.append("")
     await _send_long(bot, callback.from_user.id, "\n".join(lines))
     await callback.answer("Yuborildi ✅")
+
+
+@router.callback_query(lambda c: c.data.startswith("cd:ai:"))
+async def cd_ai_summary(callback: CallbackQuery, bot: Bot):
+    if not await _guard(callback):
+        return
+    app = await get_application(_app_id(callback))
+    if not app or not app.ai_summary:
+        await callback.answer("AI xulosasi yo'q.", show_alert=True)
+        return
+    await _send_long(bot, callback.from_user.id,
+                     f"👤 <b>{esc(app.full_name)}</b> — ariza #{app.id}\n\n"
+                     f"{app.ai_summary}")
+    await callback.answer("Yuborildi ✅")
+
+
+@router.callback_query(lambda c: c.data.startswith("cd:regrade:"))
+async def cd_regrade(callback: CallbackQuery, bot: Bot):
+    """AI bilan qayta baholash (kalit yoki tarmoq xatosi bo'lgan holat uchun)."""
+    if not await _guard(callback):
+        return
+    app_id = _app_id(callback)
+    from app.ai_grader import is_enabled, grade_application
+    if not is_enabled():
+        await callback.answer(
+            "AI baholash yoqilmagan. .env ga ANTHROPIC_API_KEY qo'shib, "
+            "botni restart qiling.", show_alert=True)
+        return
+    await callback.answer("🤖 Baholanmoqda… (bir necha soniya)")
+    res = await grade_application(app_id)
+    app = await get_application(app_id)
+    answers = await get_application_answers(app_id)
+    written = [a for a in answers if a.qtype == "written"]
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=grade_menu_keyboard(app, written, ai_available=True))
+    except Exception:
+        pass
+    if res["graded"] or res["summary"]:
+        await callback.message.answer(
+            f"🤖 <b>AI baholash tugadi</b>\n"
+            f"Yozma javoblar: {res['graded']} ta baholandi\n"
+            f"Umumiy xulosa: {'✅ tayyor' if res['summary'] else '❌ chiqmadi'}\n\n"
+            f"<i>Natijani ko'rish: «✍️ Yozma» va «🤖 AI xulosasi» tugmalari.</i>",
+            parse_mode="HTML")
+    else:
+        await callback.message.answer(
+            "⚠️ AI baholash natija bermadi. Kalit to'g'riligini yoki "
+            "internet ulanishini tekshiring.")
 
 
 async def _send_long(bot: Bot, chat_id: int, text: str, limit: int = 3800):
@@ -311,7 +373,7 @@ async def cd_grade_menu(callback: CallbackQuery):
     written = [a for a in answers if a.qtype == "written"]
     try:
         await callback.message.edit_reply_markup(
-            reply_markup=grade_menu_keyboard(app, written))
+            reply_markup=grade_menu_keyboard(app, written, ai_available=_ai_on()))
     except Exception:
         pass
     await callback.answer("Baholash: yozma va video")
@@ -371,7 +433,7 @@ async def cd_written_set(callback: CallbackQuery):
     written = [a for a in answers if a.qtype == "written"]
     try:
         await callback.message.edit_reply_markup(
-            reply_markup=grade_menu_keyboard(app, written))
+            reply_markup=grade_menu_keyboard(app, written, ai_available=_ai_on()))
     except Exception:
         pass
     await callback.answer(f"✅ Yozma: {score}/3")
@@ -406,7 +468,7 @@ async def cd_video_set(callback: CallbackQuery):
     written = [a for a in answers if a.qtype == "written"]
     try:
         await callback.message.edit_reply_markup(
-            reply_markup=grade_menu_keyboard(app, written))
+            reply_markup=grade_menu_keyboard(app, written, ai_available=_ai_on()))
     except Exception:
         pass
     total = f" · Jami: {app.total_score}/{MAX_TOTAL}" if app and app.total_score is not None else ""

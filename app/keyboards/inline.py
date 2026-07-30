@@ -367,8 +367,8 @@ def question_templates_keyboard(vacancy_id: int):
 # MUHIM: tugma matnlari QISQA bo'lishi shart — Telegram uzun matnni kesib
 # tashlaydi va tugmalar bir qatorga sig'may qoladi.
 
-def candidate_actions_keyboard(app):
-    """HR/guruhga yuborilgan nomzod xabari ostidagi tugmalar."""
+def _view_rows(app):
+    """Ko'rish tugmalari — ikkala holatda ham bir xil."""
     rows = []
     if app.video_file_id:
         rows.append([InlineKeyboardButton(text="🎥 Video", callback_data=f"cd:video:{app.id}")])
@@ -376,6 +376,14 @@ def candidate_actions_keyboard(app):
         InlineKeyboardButton(text="🧠 Test",  callback_data=f"cd:tests:{app.id}"),
         InlineKeyboardButton(text="✍️ Yozma", callback_data=f"cd:written:{app.id}"),
     ])
+    if getattr(app, "ai_summary", None):
+        rows.append([InlineKeyboardButton(text="🤖 AI xulosasi", callback_data=f"cd:ai:{app.id}")])
+    return rows
+
+
+def candidate_actions_keyboard(app):
+    """HR/guruhga yuborilgan nomzod xabari ostidagi tugmalar."""
+    rows = _view_rows(app)
     rows.append([InlineKeyboardButton(text="⭐️ Baholash", callback_data=f"cd:grade:{app.id}")])
     rows.append([
         InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"cd:ask_ok:{app.id}"),
@@ -386,13 +394,7 @@ def candidate_actions_keyboard(app):
 
 def candidate_decided_keyboard(app):
     """Qaror qabul qilingandan keyingi tugmalar (ko'rish + qaytarish)."""
-    rows = []
-    if app.video_file_id:
-        rows.append([InlineKeyboardButton(text="🎥 Video", callback_data=f"cd:video:{app.id}")])
-    rows.append([
-        InlineKeyboardButton(text="🧠 Test",  callback_data=f"cd:tests:{app.id}"),
-        InlineKeyboardButton(text="✍️ Yozma", callback_data=f"cd:written:{app.id}"),
-    ])
+    rows = _view_rows(app)
     rows.append([InlineKeyboardButton(text="↩️ Qarorni qaytarish", callback_data=f"cd:undo:{app.id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -406,17 +408,21 @@ def confirm_decision_keyboard(app_id: int, decision: str):
     ])
 
 
-def grade_menu_keyboard(app, written_answers):
-    """Baholash menyusi: yozma javoblar + video."""
+def grade_menu_keyboard(app, written_answers, ai_available: bool = False):
+    """Baholash menyusi: yozma javoblar + video (+ AI qayta baholash)."""
     rows = []
     for idx, ans in enumerate(written_answers, start=1):
         mark = f"{ans.score}/3" if ans.score is not None else "—"
+        ai = "🤖" if getattr(ans, "ai_feedback", None) else ""
         rows.append([InlineKeyboardButton(
-            text=f"✍️ Yozma {idx}: {mark}",
+            text=f"✍️ Yozma {idx}: {mark} {ai}".strip(),
             callback_data=f"cd:wgrade:{app.id}:{ans.id}"
         )])
     vmark = f"{app.video_score}/4" if app.video_score is not None else "—"
     rows.append([InlineKeyboardButton(text=f"🎬 Video: {vmark}", callback_data=f"cd:vgrade:{app.id}")])
+    if ai_available:
+        rows.append([InlineKeyboardButton(text="🤖 AI qayta baholash",
+                                         callback_data=f"cd:regrade:{app.id}")])
     rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"cd:back:{app.id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

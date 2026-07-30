@@ -717,6 +717,16 @@ async def _finalize_screening(message: Message, state: FSMContext, bot: Bot,
         parse_mode="HTML",
         reply_markup=main_menu()
     )
+
+    # AI baholash (kalit bo'lsa) — yozma javoblarga ball qo'yadi va xulosa yozadi.
+    # Xato bo'lsa oqim buzilmaydi, HR shunchaki qo'lda baholaydi.
+    try:
+        from app.ai_grader import is_enabled, grade_application
+        if is_enabled():
+            await grade_application(app_id)
+    except Exception:
+        pass
+
     await _notify_new_candidate(bot, app_id)
 
 
@@ -752,6 +762,12 @@ async def _notify_new_candidate(bot: Bot, app_id: int):
     )
     if app.test_score is not None:
         text += f"\n🧠 <b>Test bali: {app.test_score}/9</b>"
+    if app.written_score is not None:
+        text += f"\n✍️ <b>Yozma (AI): {app.written_score}/6</b>"
+    if app.ai_summary:
+        # Xulosaning birinchi qatori — tavsiya darajasi (🟢/🟡/🔴)
+        head = app.ai_summary.split("\n", 1)[0].replace("🤖 <b>AI xulosasi</b> — ", "")
+        text += f"\n🤖 <b>AI tavsiyasi:</b> {head}"
     text += "\n\n<i>Quyidagi tugmalar orqali boshqaring:</i>"
 
     kb = candidate_actions_keyboard(app)

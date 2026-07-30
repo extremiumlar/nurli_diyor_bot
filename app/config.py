@@ -19,6 +19,12 @@ CHANNEL_BOT_OWNER_ID = int(os.getenv("CHANNEL_BOT_OWNER_ID", "0"))
 # Gemini API (narkotik kontent filter uchun)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# ── AI baholash (Claude) ───────────────────────────────────────────────────
+# .env ga ANTHROPIC_API_KEY qo'yilsa, yozma javoblar avtomatik baholanadi.
+# Kalit bo'lmasa tizim avvalgidek ishlaydi (HR qo'lda baholaydi).
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "claude-haiku-4-5")
+
 # Userbot (Telethon) — @funstat va boshqa botlarga so'rov yuborish uchun
 TELEGRAM_API_ID        = int(os.getenv("TELEGRAM_API_ID", "0") or 0)
 TELEGRAM_API_HASH      = os.getenv("TELEGRAM_API_HASH", "")

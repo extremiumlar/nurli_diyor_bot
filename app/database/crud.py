@@ -553,6 +553,15 @@ async def update_answer_score(answer_id: int, score: int | None):
             await session.commit()
 
 
+async def set_answer_ai_feedback(answer_id: int, feedback: str | None):
+    """AI baholash izohini saqlaydi (HR ko'radi)."""
+    async with async_session() as session:
+        a = await session.get(ApplicationAnswer, answer_id)
+        if a:
+            a.ai_feedback = feedback
+            await session.commit()
+
+
 async def recompute_scores(app_id: int):
     """Ariza ballarini javoblardan qayta hisoblaydi.
     written_score — barcha yozma javob ballansa; total — uch ball ham bo'lsa."""
