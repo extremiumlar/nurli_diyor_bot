@@ -343,13 +343,72 @@ def admin_remove_confirm_keyboard(telegram_id: int):
 
 # ── Saralash: vakansiya savollari (admin) ──────────────────────────────────
 
-def vacancy_questions_menu_keyboard(vacancy_id: int, has_questions: bool):
-    rows = [
-        [InlineKeyboardButton(text="📋 Shablondan yuklash", callback_data=f"vq:tmpl:{vacancy_id}")],
-    ]
+def vacancy_questions_menu_keyboard(vacancy_id: int, has_questions: bool,
+                                    ai_available: bool = False):
+    rows = []
+    if ai_available:
+        rows.append([InlineKeyboardButton(text="🤖 AI bilan yaratish",
+                                          callback_data=f"vq:ai:{vacancy_id}")])
+    rows.append([InlineKeyboardButton(text="📋 Shablondan yuklash",
+                                      callback_data=f"vq:tmpl:{vacancy_id}")])
     if has_questions:
-        rows.append([InlineKeyboardButton(text="🗑 Savollarni o'chirish", callback_data=f"vq:clear:{vacancy_id}")])
+        rows.append([InlineKeyboardButton(text="✏️ Savollarni tahrirlash",
+                                          callback_data=f"vq:edit:{vacancy_id}")])
+        rows.append([InlineKeyboardButton(text="🗑 Savollarni o'chirish",
+                                          callback_data=f"vq:clear:{vacancy_id}")])
+    else:
+        rows.append([InlineKeyboardButton(text="✍️ Qo'lda yaratish",
+                                          callback_data=f"vq:edit:{vacancy_id}")])
     rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def ai_questions_review_keyboard(vacancy_id: int):
+    """AI yaratgan to'plamni tasdiqlash."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Saqlash", callback_data=f"vq:aisave:{vacancy_id}")],
+        [InlineKeyboardButton(text="🔄 Qayta yaratish", callback_data=f"vq:ai:{vacancy_id}")],
+        [InlineKeyboardButton(text="◀️ Bekor", callback_data=f"vq:menu:{vacancy_id}")],
+    ])
+
+
+QTYPE_LABEL = {"test": "🧠", "written": "✍️", "video": "🎥"}
+
+
+def questions_list_keyboard(vacancy_id: int, questions):
+    """Savollar ro'yxati — tahrirlash uchun."""
+    rows = []
+    counters = {}
+    for q in questions:
+        n = counters.get(q.qtype, 0) + 1
+        counters[q.qtype] = n
+        icon = QTYPE_LABEL.get(q.qtype, "•")
+        label = f"{icon} {n}. {q.text}"
+        rows.append([InlineKeyboardButton(text=cut(label, 34),
+                                          callback_data=f"vq:q:{q.id}")])
+    rows.append([
+        InlineKeyboardButton(text="➕ Test", callback_data=f"vq:add:test:{vacancy_id}"),
+        InlineKeyboardButton(text="➕ Yozma", callback_data=f"vq:add:written:{vacancy_id}"),
+    ])
+    rows.append([InlineKeyboardButton(text="🎥 Video-savol",
+                                      callback_data=f"vq:add:video:{vacancy_id}")])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vq:menu:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def question_detail_keyboard(q, n_options: int = 0):
+    """Bitta savol ustidagi amallar."""
+    rows = [[InlineKeyboardButton(text="✏️ Savol matni", callback_data=f"vq:qtext:{q.id}")]]
+    if q.qtype == "test" and n_options:
+        letters = ["A", "B", "C", "D", "E"]
+        row = [InlineKeyboardButton(text=f"✏️ {letters[i]}",
+                                    callback_data=f"vq:opt:{q.id}:{i}")
+               for i in range(min(n_options, 5))]
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="🗑 Savolni o'chirish",
+                                      callback_data=f"vq:qdel:{q.id}")])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga",
+                                      callback_data=f"vq:edit:{q.vacancy_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

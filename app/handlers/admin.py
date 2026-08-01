@@ -159,12 +159,26 @@ async def _auto_attach_questions(v) -> str:
     Natija haqida qo'shimcha xabar matnini qaytaradi."""
     from app.question_bank import match_bank_key, QUESTION_BANK
     key = match_bank_key(v.title)
-    if not key:
-        return ("\n\n⚠️ Savol shabloni avtomatik topilmadi.\n"
-                "Saralash uchun qo'lda biriktiring: 📝 Savollar → 📋 Shablondan yuklash.")
-    await set_questions_from_bank(v.id, key)
-    return (f"\n\n🤖 Savollar avtomatik biriktirildi: <b>{QUESTION_BANK[key]['title']}</b> "
-            f"(3 test + 2 yozma).\n<i>Kerak bo'lsa o'zgartiring: 📝 Savollar.</i>")
+    if key:
+        await set_questions_from_bank(v.id, key)
+        return (f"\n\n🤖 Savollar avtomatik biriktirildi: "
+                f"<b>{QUESTION_BANK[key]['title']}</b>\n"
+                f"(3 test + 2 yozma + 1 video-savol)\n"
+                f"<i>Kerak bo'lsa o'zgartiring: 📝 Savollar.</i>")
+
+    # Tayyor shablon yo'q — AI yoki qo'lda yaratish taklif qilamiz
+    try:
+        from app.ai_questions import is_enabled
+        ai_on = is_enabled()
+    except Exception:
+        ai_on = False
+    if ai_on:
+        return ("\n\n⚠️ Bu lavozimga tayyor shablon yo'q.\n"
+                "📝 <b>Savollar</b> → 🤖 <b>AI bilan yaratish</b> tugmasini bosing — "
+                "shu lavozimga moslab savollar tuziladi.")
+    return ("\n\n⚠️ Bu lavozimga tayyor shablon yo'q.\n"
+            "📝 <b>Savollar</b> bo'limidan qo'lda yarating yoki eng yaqin "
+            "shablonni tanlang.")
 
 
 @router.callback_query(AddVacancyState.salary, lambda c: c.data == "vacancy_salary_skip")

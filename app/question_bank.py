@@ -740,6 +740,40 @@ QUESTION_BANK = {
         ],
         "video": "Eng murakkab yoki shoshilinch buyurtmani qanday bajarganingizni ayting — qayerdan, qanday topdingiz?",
     },
+    "loyihachi": {
+        "title": "Loyihachi (Arxitektor-loyihachi)",
+        "test": [
+            {
+                "text": "Buyurtmachi ustunsiz, ochiq katta zal xohlaydi, lekin bu konstruktiv jihatdan qimmat va murakkab yechim talab qiladi. Nima qilasiz?",
+                "options": [
+                    {"text": "Buyurtmachi asosiy maqsadini aniqlab, bir necha muqobil konstruktiv yechimni (katta oraliq to‘sin/farma, monolit rigel) narx va imkoniyat bilan taqqoslab taklif qilaman", "score": 3},
+                    {"text": "Buyurtmachi xohlagani uchun ustunsiz variantni to‘g‘ridan-to‘g‘ri loyihalayveraman", "score": 1},
+                    {"text": "Murakkab bo‘lgani uchun o‘zim ustun qo‘shib, buyurtmachiga keyin tushuntiraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Arxitektura, konstruktiv va muhandislik (suv, shamollatish, elektr) bo‘limlari chizmalarida to‘qnashuv (kolliziya) bor. Qanday aniqlab, hal qilasiz?",
+                "options": [
+                    {"text": "BIM modelida kolliziyalarni avtomatik tekshirib (clash detection), tegishli bo‘lim mutaxassislari bilan muvofiqlashtirib hal qilaman", "score": 3},
+                    {"text": "Chizmalarni qo‘lda ustma-ust qo‘yib solishtiraman va topilganini to‘g‘rilayman", "score": 1},
+                    {"text": "Har bo‘lim o‘z chizmasiga javobgar deb, alohida ishlayveraman", "score": 0},
+                ],
+            },
+            {
+                "text": "Loyihani ekspertizaga topshirishga 3 kun qoldi, lekin evakuatsiya yo‘li kengligi yong‘in xavfsizligi normasidan tor ekanini payqadingiz. Nima qilasiz?",
+                "options": [
+                    {"text": "Xatoni darhol tuzatib, ShNQ va yong‘in xavfsizligi talabiga moslashtiraman — bu ekspertizadan o‘tmaydi va hayotga xavf soladi", "score": 3},
+                    {"text": "Hozircha shunday topshirib, ekspertiza izohi kelsa keyin tuzataman", "score": 1},
+                    {"text": "Farq kichik bo‘lgani uchun o‘tkazib yuboraman", "score": 0},
+                ],
+            },
+        ],
+        "written": [
+            {"text": "Loyihani boshlashdan oldin buyurtmachi topshirig‘i (TZ) va uchastka sharoitini qanday tahlil qilasiz? Qaysi ma’lumot va cheklovlarni (grunt, kommunikatsiya, normativ) yig‘asiz?", "rubric": RUBRIC_LOGIC},
+            {"text": "Loyihalashda AIdan qanday foydalanasiz (variant generatsiya, hisob, xato/kolliziya tekshirish)? Bitta aniq misol yoki prompt yozing.", "rubric": RUBRIC_AI},
+        ],
+        "video": "Ishtirok etgan yoki mustaqil ishlagan loyihangizni ayting — g‘oyasi qanday edi, qanday muammoni yechdi va aynan sizning hissangiz nima bo‘ldi?",
+    },
 }
 
 
@@ -751,6 +785,10 @@ MATCH_RULES = [
     ("general direktor", "ceo"),
     (" direktor ", "ceo"),
     ("texnik nazorat", "texnik_nazoratchi"),
+    ("loyihachi", "loyihachi"),
+    ("arxitektor", "loyihachi"),
+    ("arxitek", "loyihachi"),
+    ("loyiha muhandis", "loyihachi"),
     ("kran muhandis", "kran_muhandisi"),
     ("kran mashinist", "kran_mashinisti"),
     ("kranchik", "kran_mashinisti"),

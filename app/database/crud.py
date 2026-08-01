@@ -472,6 +472,112 @@ async def delete_vacancy_questions(vacancy_id: int):
         await session.commit()
 
 
+async def save_question_set(vacancy_id: int, data: dict) -> int:
+    """Savol to'plamini (AI yaratgan yoki bankdan) vakansiyaga saqlaydi.
+
+    data: {"test": [{"text","options":[{"text","score"}]}],
+           "written": [{"text","rubric"}], "video": "..."}
+    Eski savollar almashtiriladi. Qo'shilgan savollar sonini qaytaradi.
+    """
+    from app.question_bank import VIDEO_RUBRIC
+    async with async_session() as session:
+        await session.execute(
+            sql_delete(VacancyQuestion).where(VacancyQuestion.vacancy_id == vacancy_id)
+        )
+        added = 0
+        for i, t in enumerate(data.get("test", []), start=1):
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="test", order_num=i,
+                text=t["text"], options=json.dumps(t["options"], ensure_ascii=False),
+            ))
+            added += 1
+        for i, w in enumerate(data.get("written", []), start=1):
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="written", order_num=i,
+                text=w["text"], rubric=w.get("rubric"),
+            ))
+            added += 1
+        if data.get("video"):
+            session.add(VacancyQuestion(
+                vacancy_id=vacancy_id, qtype="video", order_num=1,
+                text=data["video"], rubric=VIDEO_RUBRIC,
+            ))
+            added += 1
+        await session.commit()
+        return added
+
+
+async def get_question(question_id: int):
+    async with async_session() as session:
+        return await session.get(VacancyQuestion, question_id)
+
+
+async def update_question_text(question_id: int, text: str):
+    async with async_session() as session:
+        q = await session.get(VacancyQuestion, question_id)
+        if q:
+            q.text = text
+            await session.commit()
+        return q
+
+
+async def update_question_option(question_id: int, pos: int, text: str):
+    """Test savolining bitta variant matnini o'zgartiradi (ball o'zgarmaydi)."""
+    async with async_session() as session:
+        q = await session.get(VacancyQuestion, question_id)
+        if not q or not q.options:
+            return None
+        opts = json.loads(q.options)
+        if not (0 <= pos < len(opts)):
+            return None
+        opts[pos]["text"] = text
+        q.options = json.dumps(opts, ensure_ascii=False)
+        await session.commit()
+        return q
+
+
+async def delete_question(question_id: int):
+    """Bitta savolni o'chiradi va qolganlarining tartibini tiklaydi."""
+    async with async_session() as session:
+        q = await session.get(VacancyQuestion, question_id)
+        if not q:
+            return False
+        vid, qtype = q.vacancy_id, q.qtype
+        await session.delete(q)
+        await session.commit()
+        result = await session.execute(
+            select(VacancyQuestion)
+            .where(VacancyQuestion.vacancy_id == vid, VacancyQuestion.qtype == qtype)
+            .order_by(VacancyQuestion.order_num)
+        )
+        for i, item in enumerate(result.scalars().all(), start=1):
+            item.order_num = i
+        await session.commit()
+        return True
+
+
+async def add_question(vacancy_id: int, qtype: str, text: str,
+                       options: list | None = None, rubric: str | None = None):
+    """Vakansiyaga yangi savol qo'shadi (oxiriga)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.max(VacancyQuestion.order_num)).where(
+                VacancyQuestion.vacancy_id == vacancy_id,
+                VacancyQuestion.qtype == qtype,
+            )
+        )
+        nxt = (result.scalar() or 0) + 1
+        q = VacancyQuestion(
+            vacancy_id=vacancy_id, qtype=qtype, order_num=nxt, text=text,
+            options=json.dumps(options, ensure_ascii=False) if options else None,
+            rubric=rubric,
+        )
+        session.add(q)
+        await session.commit()
+        await session.refresh(q)
+        return q
+
+
 async def set_questions_from_bank(vacancy_id: int, bank_key: str) -> int:
     """QUESTION_BANK'dagi shablonni vakansiyaga nusxalaydi (eskilarini o'chirib).
     Qo'shilgan savollar sonini qaytaradi."""

@@ -10,22 +10,28 @@ Alohida "saralash paneli" YO'Q — HR barcha ishni nomzod xabari ostidagi
 tugmalar orqali bajaradi, umumiy reyting esa Excel eksportda beriladi.
 """
 import html
+import json
 from datetime import datetime
 
-from aiogram import Router, Bot
-from aiogram.types import CallbackQuery
+from aiogram import Router, Bot, F
+from aiogram.types import CallbackQuery, Message
+from aiogram.fsm.context import FSMContext
 
 from app.database.crud import (
     get_vacancy, get_all_vacancies, get_application, get_application_answers,
     count_vacancy_questions, set_questions_from_bank, delete_vacancy_questions,
     update_answer_score, recompute_scores, update_application,
+    get_vacancy_questions, save_question_set, get_question, update_question_text,
+    update_question_option, delete_question, add_question,
 )
 from app.keyboards.inline import (
     vacancy_questions_menu_keyboard, question_templates_keyboard,
     candidate_actions_keyboard, candidate_decided_keyboard,
     confirm_decision_keyboard, grade_menu_keyboard,
     grade_written_keyboard, grade_video_keyboard,
+    ai_questions_review_keyboard, questions_list_keyboard, question_detail_keyboard,
 )
+from app.states.admin_state import QuestionEditState
 from app.question_bank import (
     color_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
     match_bank_key, QUESTION_BANK,
@@ -83,10 +89,14 @@ async def vq_menu(callback: CallbackQuery):
         + ("Savollar bor — nomzodlar to'liq saralashdan (test + yozma + video) o'tadi.\n"
            if n else
            "Savol yo'q — bu vakansiyaga faqat oddiy ariza olinadi.\n")
-        + "\nTayyor shablonni tanlang (3 test + 2 yozma + 1 video-savol)."
+        + "\n<b>To'liq to'plam:</b> 3 test + 2 yozma + 1 majburiy video-savol.\n\n"
+        + ("🤖 <b>AI bilan yaratish</b> — shu lavozimga moslab yangi savollar tuzadi "
+           "(har qanday lavozim uchun).\n" if _aiq_on() else "")
+        + "📋 <b>Shablondan</b> — 22 ta tayyor lavozimdan biri.\n"
+        + "✏️ <b>Tahrirlash</b> — savollarni qo'lda yozish yoki o'zgartirish."
     )
     await callback.message.answer(text, parse_mode="HTML",
-                                  reply_markup=vacancy_questions_menu_keyboard(vid, n > 0))
+                                  reply_markup=vacancy_questions_menu_keyboard(vid, n > 0, _aiq_on()))
     await callback.answer()
 
 
@@ -125,7 +135,7 @@ async def vq_set(callback: CallbackQuery):
         f"Endi nomzodlar to'liq saralashdan o'tadi:\n"
         f"3 ta test → 2 ta yozma → 1 ta majburiy video.",
         parse_mode="HTML",
-        reply_markup=vacancy_questions_menu_keyboard(vid, True)
+        reply_markup=vacancy_questions_menu_keyboard(vid, True, _aiq_on())
     )
     await callback.answer("Biriktirildi ✅")
 
@@ -183,9 +193,366 @@ async def vq_clear(callback: CallbackQuery):
     await delete_vacancy_questions(vid)
     await callback.message.answer(
         "🗑 Savollar o'chirildi. Endi bu vakansiyaga faqat oddiy ariza olinadi.",
-        reply_markup=vacancy_questions_menu_keyboard(vid, False)
+        reply_markup=vacancy_questions_menu_keyboard(vid, False, _aiq_on())
     )
     await callback.answer("O'chirildi")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  AI bilan savol yaratish
+# ══════════════════════════════════════════════════════════════════════════
+
+def _aiq_on() -> bool:
+    try:
+        from app.ai_questions import is_enabled
+        return is_enabled()
+    except Exception:
+        return False
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:ai:"))
+async def vq_ai_generate(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not await _guard(callback):
+        return
+    vid = _app_id(callback)
+    v = await get_vacancy(vid)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    from app.ai_questions import is_enabled, generate_questions, preview_text
+    if not is_enabled():
+        await callback.answer(
+            "AI yoqilmagan. .env ga ANTHROPIC_API_KEY qo'shib, botni restart qiling.",
+            show_alert=True)
+        return
+
+    await callback.answer("🤖 Yaratilmoqda… (15-30 soniya)")
+    msg = await callback.message.answer(
+        f"🤖 <b>{esc(v.title)}</b> uchun savollar yaratilmoqda…\n"
+        f"<i>Bu 15-30 soniya vaqt oladi.</i>", parse_mode="HTML")
+
+    data = await generate_questions(v.title, v.requirements)
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+    if not data:
+        await callback.message.answer(
+            "⚠️ Savol yaratib bo'lmadi (tarmoq yoki kalit muammosi).\n"
+            "Qayta urinib ko'ring yoki tayyor shablondan yuklang.",
+            reply_markup=vacancy_questions_menu_keyboard(vid, False, True))
+        return
+
+    await state.set_state(QuestionEditState.review)
+    await state.update_data(gen=data, gen_vid=vid)
+    await _send_long(bot, callback.from_user.id, preview_text(data))
+    await callback.message.answer(
+        "👆 Yuqoridagi savollarni ko'rib chiqing.\n\n"
+        "<i>Saqlagandan keyin har bir savolni alohida tahrirlashingiz mumkin.</i>",
+        parse_mode="HTML",
+        reply_markup=ai_questions_review_keyboard(vid))
+
+
+@router.callback_query(QuestionEditState.review, lambda c: c.data.startswith("vq:aisave:"))
+async def vq_ai_save(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    vid = _app_id(callback)
+    data = await state.get_data()
+    gen = data.get("gen")
+    if not gen or data.get("gen_vid") != vid:
+        await callback.answer("Ma'lumot yo'qoldi, qayta yarating.", show_alert=True)
+        return
+    n = await save_question_set(vid, gen)
+    await state.clear()
+    v = await get_vacancy(vid)
+    await callback.message.answer(
+        f"✅ <b>{esc(v.title)}</b> vakansiyasiga {n} ta savol saqlandi.\n\n"
+        f"Endi nomzodlar to'liq saralashdan o'tadi:\n"
+        f"3 ta test → 2 ta yozma → 1 ta majburiy video.",
+        parse_mode="HTML",
+        reply_markup=vacancy_questions_menu_keyboard(vid, True, _aiq_on()))
+    await callback.answer("Saqlandi ✅")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Savollarni qo'lda tahrirlash
+# ══════════════════════════════════════════════════════════════════════════
+
+async def _questions_list(callback: CallbackQuery, vid: int, note: str = ""):
+    v = await get_vacancy(vid)
+    qs = await get_vacancy_questions(vid)
+    counts = {}
+    for q in qs:
+        counts[q.qtype] = counts.get(q.qtype, 0) + 1
+    head = (
+        f"✏️ <b>{esc(v.title if v else vid)}</b> — savollar\n\n"
+        f"🧠 Test: {counts.get('test', 0)} ta · "
+        f"✍️ Yozma: {counts.get('written', 0)} ta · "
+        f"🎥 Video: {counts.get('video', 0)} ta\n\n"
+        f"<i>To'liq to'plam: 3 test + 2 yozma + 1 video.\n"
+        f"Tahrirlash uchun savolni tanlang.</i>"
+    )
+    if note:
+        head = note + "\n\n" + head
+    await callback.message.answer(head, parse_mode="HTML",
+                                  reply_markup=questions_list_keyboard(vid, qs))
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:edit:"))
+async def vq_edit_list(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    await state.clear()
+    await _questions_list(callback, _app_id(callback))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:q:"))
+async def vq_question_detail(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    await state.clear()
+    qid = _app_id(callback)
+    q = await get_question(qid)
+    if not q:
+        await callback.answer("Savol topilmadi.", show_alert=True)
+        return
+
+    letters = ["A", "B", "C", "D", "E"]
+    kind = {"test": "🧠 Test savoli", "written": "✍️ Yozma savol",
+            "video": "🎥 Video-savol"}.get(q.qtype, q.qtype)
+    lines = [f"{kind} #{q.order_num}\n", f"<b>{esc(q.text)}</b>"]
+    n_opt = 0
+    if q.qtype == "test" and q.options:
+        opts = json.loads(q.options)
+        n_opt = len(opts)
+        lines.append("")
+        for i, o in enumerate(opts):
+            lines.append(f"<b>{letters[i]})</b> {esc(o['text'])} — <i>{o['score']} ball</i>")
+        lines.append("\n<i>Ballar o'zgarmaydi — faqat matnni tahrirlash mumkin.</i>")
+    elif q.qtype == "written":
+        lines.append(f"\n<i>Baholash: 0-3 ball (HR yoki AI)</i>")
+    else:
+        lines.append(f"\n<i>Baholash: 0-4 ball. Bot oldiga «o'zingizni tanishtiring» "
+                     f"qismini avtomatik qo'shadi.</i>")
+
+    await callback.message.answer("\n".join(lines), parse_mode="HTML",
+                                  reply_markup=question_detail_keyboard(q, n_opt))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:qtext:"))
+async def vq_edit_text_start(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    qid = _app_id(callback)
+    q = await get_question(qid)
+    if not q:
+        await callback.answer("Savol topilmadi.", show_alert=True)
+        return
+    await state.set_state(QuestionEditState.q_text)
+    await state.update_data(qid=qid)
+    await callback.message.answer(
+        f"✏️ <b>Savol matnini yozing</b>\n\n"
+        f"Hozirgi matn:\n<i>{esc(q.text)}</i>\n\n"
+        f"Yangi matnni yuboring:",
+        parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(QuestionEditState.q_text, F.text)
+async def vq_edit_text_save(message: Message, state: FSMContext):
+    data = await state.get_data()
+    q = await update_question_text(data["qid"], message.text.strip())
+    await state.clear()
+    if not q:
+        await message.answer("⚠️ Savol topilmadi.")
+        return
+    qs = await get_vacancy_questions(q.vacancy_id)
+    await message.answer(
+        "✅ Savol matni yangilandi.", parse_mode="HTML",
+        reply_markup=questions_list_keyboard(q.vacancy_id, qs))
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:opt:"))
+async def vq_edit_option_start(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    parts = callback.data.split(":")
+    try:
+        qid, pos = int(parts[2]), int(parts[3])
+    except (ValueError, IndexError):
+        await callback.answer("Xato.")
+        return
+    q = await get_question(qid)
+    if not q or not q.options:
+        await callback.answer("Savol topilmadi.", show_alert=True)
+        return
+    opts = json.loads(q.options)
+    if not (0 <= pos < len(opts)):
+        await callback.answer("Variant topilmadi.", show_alert=True)
+        return
+    letters = ["A", "B", "C", "D", "E"]
+    await state.set_state(QuestionEditState.opt_text)
+    await state.update_data(qid=qid, pos=pos)
+    await callback.message.answer(
+        f"✏️ <b>{letters[pos]}) variant matnini yozing</b>\n"
+        f"<i>Bu variant {opts[pos]['score']} ball beradi — ball o'zgarmaydi.</i>\n\n"
+        f"Hozirgi matn:\n<i>{esc(opts[pos]['text'])}</i>\n\n"
+        f"Yangi matnni yuboring:",
+        parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(QuestionEditState.opt_text, F.text)
+async def vq_edit_option_save(message: Message, state: FSMContext):
+    data = await state.get_data()
+    q = await update_question_option(data["qid"], data["pos"], message.text.strip())
+    await state.clear()
+    if not q:
+        await message.answer("⚠️ Variant yangilanmadi.")
+        return
+    qs = await get_vacancy_questions(q.vacancy_id)
+    await message.answer(
+        "✅ Variant matni yangilandi.", parse_mode="HTML",
+        reply_markup=questions_list_keyboard(q.vacancy_id, qs))
+
+
+@router.callback_query(lambda c: c.data.startswith("vq:qdel:"))
+async def vq_delete_question(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    qid = _app_id(callback)
+    q = await get_question(qid)
+    if not q:
+        await callback.answer("Savol topilmadi.", show_alert=True)
+        return
+    vid = q.vacancy_id
+    await delete_question(qid)
+    await _questions_list(callback, vid, "🗑 Savol o'chirildi.")
+    await callback.answer("O'chirildi")
+
+
+# ── Yangi savol qo'shish ───────────────────────────────────────────────────
+
+@router.callback_query(lambda c: c.data.startswith("vq:add:"))
+async def vq_add_start(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    parts = callback.data.split(":")
+    try:
+        qtype, vid = parts[2], int(parts[3])
+    except (ValueError, IndexError):
+        await callback.answer("Xato.")
+        return
+    await state.update_data(add_vid=vid)
+
+    if qtype == "test":
+        await state.set_state(QuestionEditState.new_test_q)
+        await callback.message.answer(
+            "🧠 <b>Yangi test savoli</b>\n\n"
+            "Savol matnini yuboring.\n"
+            "<i>Maslahat: real ish vaziyati bo'lsin, ta'rif so'ramasin.\n"
+            "Masalan: «Obyektga zudlik bilan material kerak, lekin bazada yo'q. "
+            "Nima qilasiz?»</i>",
+            parse_mode="HTML")
+    elif qtype == "written":
+        await state.set_state(QuestionEditState.new_written)
+        await callback.message.answer(
+            "✍️ <b>Yangi yozma savol</b>\n\n"
+            "Savol matnini yuboring.\n"
+            "<i>Nomzod matn bilan javob beradi, HR yoki AI 0-3 ball qo'yadi.</i>",
+            parse_mode="HTML")
+    else:
+        await state.set_state(QuestionEditState.new_video)
+        await callback.message.answer(
+            "🎥 <b>Video-savol</b>\n\n"
+            "Savol matnini yuboring.\n"
+            "<i>«Avval o'zingizni tanishtiring» qismini yozmang — bot uni "
+            "o'zi qo'shadi. Faqat savolning o'zini yozing.\n"
+            "Agar video-savol allaqachon bo'lsa, yangisi qo'shiladi — "
+            "eskisini o'chirib qo'ying.</i>",
+            parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(QuestionEditState.new_test_q, F.text)
+async def vq_new_test_q(message: Message, state: FSMContext):
+    await state.update_data(nq_text=message.text.strip())
+    await state.set_state(QuestionEditState.new_test_o3)
+    await message.answer(
+        "✅ Savol qabul qilindi.\n\n"
+        "Endi <b>eng to'g'ri javob</b>ni yuboring (3 ball).\n"
+        "<i>Kasbiy jihatdan to'g'ri, tizimli yondashuv.</i>",
+        parse_mode="HTML")
+
+
+@router.message(QuestionEditState.new_test_o3, F.text)
+async def vq_new_test_o3(message: Message, state: FSMContext):
+    await state.update_data(nq_o3=message.text.strip())
+    await state.set_state(QuestionEditState.new_test_o1)
+    await message.answer(
+        "Endi <b>qisman to'g'ri javob</b>ni yuboring (1 ball).\n"
+        "<i>Amalda ko'p uchraydigan tezkor yo'l — natija beradi, lekin "
+        "sababni yechmaydi. Uzunligi 3 ballik javobga yaqin bo'lsin.</i>",
+        parse_mode="HTML")
+
+
+@router.message(QuestionEditState.new_test_o1, F.text)
+async def vq_new_test_o1(message: Message, state: FSMContext):
+    await state.update_data(nq_o1=message.text.strip())
+    await state.set_state(QuestionEditState.new_test_o0)
+    await message.answer(
+        "Endi <b>yaroqsiz javob</b>ni yuboring (0 ball).\n"
+        "<i>Mas'uliyatdan qochish yoki qoidani buzish.</i>",
+        parse_mode="HTML")
+
+
+@router.message(QuestionEditState.new_test_o0, F.text)
+async def vq_new_test_o0(message: Message, state: FSMContext):
+    data = await state.get_data()
+    vid = data["add_vid"]
+    opts = [
+        {"text": data["nq_o3"], "score": 3},
+        {"text": data["nq_o1"], "score": 1},
+        {"text": message.text.strip(), "score": 0},
+    ]
+    await add_question(vid, "test", data["nq_text"], options=opts)
+    await state.clear()
+    qs = await get_vacancy_questions(vid)
+    await message.answer(
+        "✅ <b>Test savoli qo'shildi.</b>\n"
+        "<i>Variantlar nomzodga aralashtirilib ko'rsatiladi.</i>",
+        parse_mode="HTML",
+        reply_markup=questions_list_keyboard(vid, qs))
+
+
+@router.message(QuestionEditState.new_written, F.text)
+async def vq_new_written(message: Message, state: FSMContext):
+    from app.question_bank import RUBRIC_LOGIC
+    data = await state.get_data()
+    vid = data["add_vid"]
+    await add_question(vid, "written", message.text.strip(), rubric=RUBRIC_LOGIC)
+    await state.clear()
+    qs = await get_vacancy_questions(vid)
+    await message.answer(
+        "✅ <b>Yozma savol qo'shildi.</b>", parse_mode="HTML",
+        reply_markup=questions_list_keyboard(vid, qs))
+
+
+@router.message(QuestionEditState.new_video, F.text)
+async def vq_new_video(message: Message, state: FSMContext):
+    from app.question_bank import VIDEO_RUBRIC
+    data = await state.get_data()
+    vid = data["add_vid"]
+    await add_question(vid, "video", message.text.strip(), rubric=VIDEO_RUBRIC)
+    await state.clear()
+    qs = await get_vacancy_questions(vid)
+    await message.answer(
+        "✅ <b>Video-savol qo'shildi.</b>", parse_mode="HTML",
+        reply_markup=questions_list_keyboard(vid, qs))
 
 
 # ══════════════════════════════════════════════════════════════════════════

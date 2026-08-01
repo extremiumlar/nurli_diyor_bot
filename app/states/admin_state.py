@@ -36,6 +36,19 @@ class AnnounceState(StatesGroup):
     picking = State()   # vakansiya bo'yicha filtr uchun ko'p tanlash
 
 
+class QuestionEditState(StatesGroup):
+    """Admin savollarni qo'lda yaratish/tahrirlash."""
+    review      = State()   # AI yaratgan to'plamni ko'rib chiqish
+    q_text      = State()   # savol matnini o'zgartirish
+    opt_text    = State()   # test variant matnini o'zgartirish
+    new_test_q  = State()   # yangi test savoli: matn
+    new_test_o3 = State()   # yangi test savoli: 3 ballik javob
+    new_test_o1 = State()   # yangi test savoli: 1 ballik javob
+    new_test_o0 = State()   # yangi test savoli: 0 ballik javob
+    new_written = State()   # yangi yozma savol
+    new_video   = State()   # video-savol matni
+
+
 class AddAdminState(StatesGroup):
     telegram_id = State()   # admin Telegram ID si
     role        = State()   # rol tanlash
