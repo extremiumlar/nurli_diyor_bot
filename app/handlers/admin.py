@@ -1004,9 +1004,9 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
         COLOR_GREEN_MIN, COLOR_YELLOW_MIN,
     )
 
+    # DIQQAT: hech qanday ariza YASHIRILMAYDI — hammasi hisobotga tushadi.
+    # Tugatilmaganlar «Holat» ustunida ko'rinadi va ro'yxat oxirida turadi.
     apps = await get_applications()
-    # Tugatilmagan (yarim tashlangan) arizalar reytingga kirmaydi
-    apps = [a for a in apps if a.status != "in_progress"]
     if not apps:
         await callback.answer("Hisobotga tushadigan ariza yo'q.", show_alert=True)
         return
@@ -1035,10 +1035,13 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
                     + [vid for vid in grouped if vid not in vacancy_map])
 
     total_rows = 0
+    n_incomplete = sum(1 for a in apps if a.status == "in_progress")
     for vid in ordered_vids:
         rows = grouped[vid]
-        # Reyting: ball bo'yicha yuqoridan pastga (baholanmaganlar oxirida)
-        rows.sort(key=lambda a: (a.total_score is None, -(a.total_score or 0),
+        # Reyting: avval yakunlanganlar (ball bo'yicha), oxirida tugatilmaganlar
+        rows.sort(key=lambda a: (a.status == "in_progress",
+                                 a.total_score is None,
+                                 -(a.total_score or 0),
                                  -(a.test_score or 0)))
         v = vacancy_map.get(vid) if vid else None
         ws = wb.create_sheet(title=_safe_sheet_name(v.title if v else "Belgilanmagan", used_names))
@@ -1112,8 +1115,11 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
         document=BufferedInputFile(buf.read(), filename=filename),
         caption=(
             f"📊 <b>Nomzodlar reytingi</b>\n\n"
-            f"Jami {total_rows} ta nomzod, {len(ordered_vids)} ta vakansiya "
-            f"(har biri alohida sahifada).\n\n"
+            f"Jami {total_rows} ta ariza, {len(ordered_vids)} ta vakansiya "
+            f"(har biri alohida sahifada).\n"
+            + (f"<i>Shundan {n_incomplete} tasi tugatilmagan — ro'yxat oxirida.</i>\n"
+               if n_incomplete else "")
+            + "\n"
             f"🟩 Yuqori ({COLOR_GREEN_MIN}-{MAX_TOTAL} ball)   "
             f"🟨 O'rta ({COLOR_YELLOW_MIN}-{COLOR_GREEN_MIN - 1})   "
             f"🟥 Past (0-{COLOR_YELLOW_MIN - 1})\n"
