@@ -36,6 +36,11 @@ class AnnounceState(StatesGroup):
     picking = State()   # vakansiya bo'yicha filtr uchun ko'p tanlash
 
 
+class BulkStageState(StatesGroup):
+    """Bosqichlarni bir nechta vakansiyaga birdan sozlash."""
+    config = State()   # nima / qaysi vakansiyalar / qaysi rejim — FSM data'da
+
+
 class QuestionEditState(StatesGroup):
     """Admin savollarni qo'lda yaratish/tahrirlash."""
     review      = State()   # AI yaratgan to'plamni ko'rib chiqish

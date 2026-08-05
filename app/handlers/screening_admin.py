@@ -23,6 +23,7 @@ from app.database.crud import (
     update_answer_score, recompute_scores, update_application,
     get_vacancy_questions, save_question_set, get_question, update_question_text,
     update_question_option, delete_question, add_question, update_vacancy,
+    bulk_update_vacancies,
 )
 from app.keyboards.inline import (
     vacancy_questions_menu_keyboard, question_templates_keyboard,
@@ -31,8 +32,10 @@ from app.keyboards.inline import (
     grade_written_keyboard, grade_video_keyboard,
     ai_questions_review_keyboard, questions_list_keyboard, question_detail_keyboard,
     stage_settings_keyboard, mode_choice_keyboard, MODE_LABEL,
+    bulk_what_keyboard, bulk_scope_keyboard, bulk_pick_keyboard,
+    bulk_mode_keyboard, bulk_confirm_keyboard, BULK_WHAT_LABEL,
 )
-from app.states.admin_state import QuestionEditState
+from app.states.admin_state import QuestionEditState, BulkStageState
 from app.question_bank import (
     color_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
     match_bank_key, QUESTION_BANK,
@@ -340,6 +343,212 @@ async def vs_video_set(callback: CallbackQuery):
     if not await _guard(callback):
         return
     await _set_mode(callback, "video_mode", "🎥 Video:")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  OMMAVIY sozlash — bir nechta vakansiyaga birdan
+#  Oqim: nima → qaysi vakansiyalar → qaysi rejim → tasdiq → qo'llash
+# ══════════════════════════════════════════════════════════════════════════
+
+def _bulk_fields(what: str, mode: str) -> dict:
+    f = {}
+    if what in ("q", "both"):
+        f["questions_mode"] = mode
+    if what in ("v", "both"):
+        f["video_mode"] = mode
+    return f
+
+
+@router.callback_query(lambda c: c.data == "bs:menu")
+async def bs_menu(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    await state.set_state(BulkStageState.config)
+    await state.set_data({})
+    vacancies = await get_all_vacancies()
+    if not vacancies:
+        await callback.answer("Vakansiya yo'q.", show_alert=True)
+        return
+    await callback.message.answer(
+        "🎛 <b>Bosqichlarni ommaviy sozlash</b>\n\n"
+        f"Bir nechta vakansiyaning saralash bosqichlarini birdan o'zgartirish "
+        f"({len(vacancies)} ta vakansiya bor).\n\n"
+        "<b>Nimani o'zgartiramiz?</b>",
+        parse_mode="HTML",
+        reply_markup=bulk_what_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data.startswith("bs:what:"))
+async def bs_what(callback: CallbackQuery, state: FSMContext):
+    what = callback.data.split(":")[2]
+    if what not in ("q", "v", "both"):
+        await callback.answer("Xato.")
+        return
+    await state.update_data(what=what)
+    vacancies = await get_all_vacancies()
+    await callback.message.answer(
+        f"✅ Tanlandi: <b>{BULK_WHAT_LABEL[what]}</b>\n\n"
+        "<b>Qaysi vakansiyalarga qo'llaymiz?</b>",
+        parse_mode="HTML",
+        reply_markup=bulk_scope_keyboard(len(vacancies)))
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data == "bs:scope:all")
+async def bs_scope_all(callback: CallbackQuery, state: FSMContext):
+    vacancies = await get_all_vacancies()
+    await state.update_data(picked=[v.id for v in vacancies], scope="all")
+    await _bulk_ask_mode(callback, state)
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data == "bs:scope:pick")
+async def bs_scope_pick(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(picked=[], scope="pick")
+    await _bulk_show_picker(callback, state)
+    await callback.answer()
+
+
+async def _bulk_show_picker(callback: CallbackQuery, state: FSMContext, edit: bool = False):
+    data = await state.get_data()
+    picked = set(data.get("picked", []))
+    vacancies = await get_all_vacancies()
+    text = (
+        "🎯 <b>Vakansiyalarni tanlang</b>\n\n"
+        f"Belgilangan: <b>{len(picked)} ta</b>\n"
+        "<i>Bosgan sari belgilanadi / belgi olinadi.</i>"
+    )
+    kb = bulk_pick_keyboard(vacancies, picked)
+    if edit:
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+            return
+        except Exception:
+            pass
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data.startswith("bs:tog:"))
+async def bs_toggle(callback: CallbackQuery, state: FSMContext):
+    try:
+        vid = int(callback.data.split(":")[2])
+    except (ValueError, IndexError):
+        await callback.answer("Xato.")
+        return
+    data = await state.get_data()
+    picked = set(data.get("picked", []))
+    picked.symmetric_difference_update({vid})
+    await state.update_data(picked=list(picked))
+    await _bulk_show_picker(callback, state, edit=True)
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data in ("bs:pickall", "bs:picknone"))
+async def bs_pick_all_none(callback: CallbackQuery, state: FSMContext):
+    if callback.data == "bs:pickall":
+        vacancies = await get_all_vacancies()
+        await state.update_data(picked=[v.id for v in vacancies])
+    else:
+        await state.update_data(picked=[])
+    await _bulk_show_picker(callback, state, edit=True)
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data == "bs:next")
+async def bs_next(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if not data.get("picked"):
+        await callback.answer("Hech qanday vakansiya tanlanmadi.", show_alert=True)
+        return
+    await _bulk_ask_mode(callback, state)
+
+
+async def _bulk_ask_mode(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    n = len(data.get("picked", []))
+    what = data.get("what", "both")
+    await callback.message.answer(
+        f"✅ <b>{n} ta vakansiya</b> tanlandi\n"
+        f"O'zgaradi: <b>{BULK_WHAT_LABEL.get(what, what)}</b>\n\n"
+        "<b>Qaysi rejimga o'tkazamiz?</b>\n\n"
+        "🔴 <b>Majburiy</b> — bosqichni o'tmasdan ariza yakunlanmaydi\n"
+        "🟡 <b>Ixtiyoriy</b> — nomzod o'tkazib yuborishi mumkin (0 ball)\n"
+        "⚫️ <b>O'chirilgan</b> — bosqich umuman so'ralmaydi",
+        parse_mode="HTML",
+        reply_markup=bulk_mode_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data.startswith("bs:mode:"))
+async def bs_mode(callback: CallbackQuery, state: FSMContext):
+    mode = callback.data.split(":")[2]
+    if mode not in ("required", "optional", "off"):
+        await callback.answer("Xato.")
+        return
+    await state.update_data(mode=mode)
+    data = await state.get_data()
+    picked = data.get("picked", [])
+    what = data.get("what", "both")
+
+    vacancies = await get_all_vacancies()
+    names = [v.title for v in vacancies if v.id in set(picked)]
+    preview = "\n".join(f"• {esc(t)}" for t in names[:12])
+    if len(names) > 12:
+        preview += f"\n<i>… va yana {len(names) - 12} ta</i>"
+
+    from app.question_bank import stage_max
+    q_after = mode if what in ("q", "both") else "?"
+    v_after = mode if what in ("v", "both") else "?"
+    warn = ""
+    if what == "both" and mode == "off":
+        warn = ("\n⚠️ <b>Diqqat:</b> ikkala bosqich ham o'chadi — bu vakansiyalarga "
+                "faqat oddiy ariza olinadi va ball qo'yilmaydi.\n")
+
+    await callback.message.answer(
+        f"❓ <b>Tasdiqlaysizmi?</b>\n\n"
+        f"<b>{len(picked)} ta vakansiya</b>ga qo'llanadi:\n"
+        f"{BULK_WHAT_LABEL.get(what, what)} → <b>{MODE_LABEL.get(mode, mode)}</b>\n"
+        f"{warn}\n"
+        f"{preview}\n\n"
+        f"<i>O'zgartirish faqat YANGI arizalarga ta'sir qiladi — "
+        f"eski arizalar bahosi buzilmaydi.</i>",
+        parse_mode="HTML",
+        reply_markup=bulk_confirm_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(BulkStageState.config, lambda c: c.data == "bs:apply")
+async def bs_apply(callback: CallbackQuery, state: FSMContext):
+    if not await _guard(callback):
+        return
+    data = await state.get_data()
+    picked = data.get("picked", [])
+    what = data.get("what")
+    mode = data.get("mode")
+    if not (picked and what and mode):
+        await callback.answer("Ma'lumot yo'qoldi, qaytadan boshlang.", show_alert=True)
+        return
+
+    fields = _bulk_fields(what, mode)
+    n = await bulk_update_vacancies(picked, **fields)
+    await state.clear()
+
+    # Natijani ko'rsatamiz
+    vacancies = await get_all_vacancies()
+    lines = [f"✅ <b>{n} ta vakansiya o'zgartirildi</b>\n",
+             f"{BULK_WHAT_LABEL.get(what, what)} → <b>{MODE_LABEL.get(mode, mode)}</b>\n",
+             "<b>Joriy holat:</b>"]
+    for v in vacancies:
+        if v.id not in set(picked):
+            continue
+        qm = MODE_LABEL.get(v.questions_mode or "required", "?").split()[0]
+        vm = MODE_LABEL.get(v.video_mode or "required", "?").split()[0]
+        from app.question_bank import stage_max
+        mx = stage_max(v.questions_mode or "required", v.video_mode or "required")
+        lines.append(f"• {esc(v.title)} — 🧠{qm} 🎥{vm} ({mx} ball)")
+
+    await _send_long(callback.bot, callback.from_user.id, "\n".join(lines))
+    await callback.answer(f"✅ {n} ta vakansiya o'zgartirildi", show_alert=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════

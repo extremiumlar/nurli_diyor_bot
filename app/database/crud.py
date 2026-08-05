@@ -268,6 +268,19 @@ async def update_vacancy(vacancy_id: int, **kwargs):
         return v
 
 
+async def bulk_update_vacancies(vacancy_ids: list[int], **fields) -> int:
+    """Bir nechta vakansiyaning sozlamasini birdan o'zgartiradi.
+    O'zgartirilgan vakansiyalar sonini qaytaradi."""
+    if not vacancy_ids or not fields:
+        return 0
+    async with async_session() as session:
+        result = await session.execute(
+            update(Vacancy).where(Vacancy.id.in_(vacancy_ids)).values(**fields)
+        )
+        await session.commit()
+        return result.rowcount or 0
+
+
 async def toggle_vacancy(vacancy_id: int, active: bool):
     async with async_session() as session:
         v = await session.get(Vacancy, vacancy_id)

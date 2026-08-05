@@ -135,6 +135,7 @@ def admin_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📡 Kanal o'rnatish",     callback_data="settings:channel")],
         [InlineKeyboardButton(text="📸 Instagram o'rnatish", callback_data="settings:instagram")],
+        [InlineKeyboardButton(text="🎛 Bosqichlarni sozlash", callback_data="bs:menu")],
         [InlineKeyboardButton(text="📥 Arizalar guruhi",     callback_data="settings:apps_group")],
         [InlineKeyboardButton(text="🧪 Guruhni tekshirish",  callback_data="settings:test_group")],
         [InlineKeyboardButton(text="🗑 Kanalni o'chirish",   callback_data="settings:clear_channel")],
@@ -400,6 +401,65 @@ def mode_choice_keyboard(vacancy_id: int, current: str, kind: str):
 
 def video_mode_keyboard(vacancy_id: int, current: str):
     return mode_choice_keyboard(vacancy_id, current, "v")
+
+
+# ── Ommaviy sozlash (bir nechta vakansiyaga birdan) ────────────────────────
+
+BULK_WHAT_LABEL = {
+    "q":    "🧠 Faqat savollar",
+    "v":    "🎥 Faqat video",
+    "both": "🧠🎥 Ikkalasi",
+}
+
+
+def bulk_what_keyboard():
+    """Nimani o'zgartirish."""
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"bs:what:{k}")]
+            for k, label in BULK_WHAT_LABEL.items()]
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="admin:settings")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bulk_scope_keyboard(total: int):
+    """Qaysi vakansiyalarga."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"👥 Barchasi ({total} ta)", callback_data="bs:scope:all")],
+        [InlineKeyboardButton(text="🎯 Tanlab olish", callback_data="bs:scope:pick")],
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data="bs:menu")],
+    ])
+
+
+def bulk_pick_keyboard(vacancies, picked: set):
+    """Vakansiyalarni ko'p tanlash."""
+    rows = [[
+        InlineKeyboardButton(text="☑️ Hammasi", callback_data="bs:pickall"),
+        InlineKeyboardButton(text="⬜️ Tozalash", callback_data="bs:picknone"),
+    ]]
+    for v in vacancies:
+        mark = "☑️" if v.id in picked else "⬜️"
+        rows.append([InlineKeyboardButton(
+            text=cut(f"{mark} {v.title}", 32),
+            callback_data=f"bs:tog:{v.id}")])
+    if picked:
+        rows.append([InlineKeyboardButton(
+            text=f"➡️ Davom etish ({len(picked)} ta)", callback_data="bs:next")])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="bs:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bulk_mode_keyboard():
+    """Qaysi rejimga o'tkazish."""
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"bs:mode:{m}")]
+            for m, label in MODE_LABEL.items()]
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data="bs:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bulk_confirm_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Ha, o'zgartirish", callback_data="bs:apply")],
+        [InlineKeyboardButton(text="◀️ Bekor", callback_data="bs:menu")],
+    ])
 
 
 def ai_questions_review_keyboard(vacancy_id: int):
