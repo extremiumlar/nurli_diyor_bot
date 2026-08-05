@@ -78,8 +78,9 @@ class Vacancy(Base):
     salary_ceiling: Mapped[int | None] = mapped_column(Integer, nullable=True)  # byudjet shifti (💰 belgi uchun)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     # ── Saralash bosqichlarini boshqarish (admin sozlaydi) ─────────────
-    questions_enabled: Mapped[bool] = mapped_column(Boolean, default=True)   # test + yozma
-    video_mode: Mapped[str] = mapped_column(String(10), default="required")  # required|optional|off
+    # Ikkalasi ham: required (majburiy) | optional (ixtiyoriy) | off (o'chiq)
+    questions_mode: Mapped[str] = mapped_column(String(10), default="required")  # test + yozma
+    video_mode: Mapped[str] = mapped_column(String(10), default="required")
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
 

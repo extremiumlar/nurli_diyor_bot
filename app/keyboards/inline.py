@@ -364,37 +364,42 @@ def vacancy_questions_menu_keyboard(vacancy_id: int, has_questions: bool,
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-VIDEO_MODE_LABEL = {
+MODE_LABEL = {
     "required": "🔴 Majburiy",
     "optional": "🟡 Ixtiyoriy",
     "off":      "⚫️ O'chirilgan",
 }
+VIDEO_MODE_LABEL = MODE_LABEL   # eski nom (moslik uchun)
 
 
 def stage_settings_keyboard(v):
     """Vakansiya bosqichlarini boshqarish menyusi."""
-    q_on = bool(getattr(v, "questions_enabled", True))
-    mode = getattr(v, "video_mode", "required") or "required"
+    q_mode = getattr(v, "questions_mode", "required") or "required"
+    v_mode = getattr(v, "video_mode", "required") or "required"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"🧠 Savollar: {'✅ Yoqilgan' if q_on else '❌ O‘chirilgan'}",
-            callback_data=f"vs:q:{v.id}")],
+            text=f"🧠 Savollar: {MODE_LABEL.get(q_mode, q_mode)}",
+            callback_data=f"vs:qmenu:{v.id}")],
         [InlineKeyboardButton(
-            text=f"🎥 Video: {VIDEO_MODE_LABEL.get(mode, mode)}",
+            text=f"🎥 Video: {MODE_LABEL.get(v_mode, v_mode)}",
             callback_data=f"vs:vmenu:{v.id}")],
         [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{v.id}")],
     ])
 
 
-def video_mode_keyboard(vacancy_id: int, current: str):
-    """Video rejimini tanlash."""
+def mode_choice_keyboard(vacancy_id: int, current: str, kind: str):
+    """Rejim tanlash. kind: 'q' (savollar) yoki 'v' (video)."""
     rows = []
-    for mode, label in VIDEO_MODE_LABEL.items():
+    for mode, label in MODE_LABEL.items():
         mark = "✅ " if mode == current else ""
         rows.append([InlineKeyboardButton(
-            text=f"{mark}{label}", callback_data=f"vs:vset:{vacancy_id}:{mode}")])
+            text=f"{mark}{label}", callback_data=f"vs:{kind}set:{vacancy_id}:{mode}")])
     rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vs:menu:{vacancy_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def video_mode_keyboard(vacancy_id: int, current: str):
+    return mode_choice_keyboard(vacancy_id, current, "v")
 
 
 def ai_questions_review_keyboard(vacancy_id: int):

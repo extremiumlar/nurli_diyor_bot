@@ -691,9 +691,11 @@ async def recompute_scores(app_id: int):
             app.written_score = sum(a.score for a in written)
 
         # Qaysi bosqichlar shu arizaga tegishli — vakansiya sozlamasidan
+        from app.question_bank import STAGE_ON
         vac = await session.get(Vacancy, app.vacancy_id) if app.vacancy_id else None
-        q_on = True if vac is None else bool(vac.questions_enabled)
+        q_mode = "required" if vac is None else (vac.questions_mode or "required")
         v_mode = "required" if vac is None else (vac.video_mode or "required")
+        q_on = q_mode in STAGE_ON
 
         parts, ready = 0, True
         if q_on:
@@ -701,7 +703,7 @@ async def recompute_scores(app_id: int):
                 ready = False
             else:
                 parts += app.test_score + app.written_score
-        if v_mode in ("required", "optional"):
+        if v_mode in STAGE_ON:
             if app.video_score is None:
                 ready = False
             else:

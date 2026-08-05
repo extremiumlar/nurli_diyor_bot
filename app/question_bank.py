@@ -867,12 +867,22 @@ PCT_GREEN_MIN = 73
 PCT_YELLOW_MIN = 47
 
 
-def stage_max(questions_enabled: bool, video_mode: str) -> int:
-    """Vakansiya sozlamalariga qarab maksimal ball."""
+STAGE_ON = ("required", "optional")   # bosqich baholanadi (ixtiyoriy bo'lsa ham)
+
+
+def stage_max(questions_mode, video_mode: str) -> int:
+    """Vakansiya sozlamalariga qarab maksimal ball.
+
+    Ixtiyoriy bosqich ham maksimalga kiradi — nomzodga imkoniyat berilgan,
+    o'tkazib yuborsa 0 ball oladi.
+    `questions_mode` eski bool qiymatni ham qabul qiladi (moslik uchun).
+    """
+    if isinstance(questions_mode, bool):   # eski chaqiruvlar uchun
+        questions_mode = "required" if questions_mode else "off"
     total = 0
-    if questions_enabled:
+    if questions_mode in STAGE_ON:
         total += MAX_TEST + MAX_WRITTEN
-    if video_mode in ("required", "optional"):
+    if video_mode in STAGE_ON:
         total += MAX_VIDEO
     return total
 

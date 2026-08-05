@@ -30,7 +30,7 @@ from app.keyboards.inline import (
     confirm_decision_keyboard, grade_menu_keyboard,
     grade_written_keyboard, grade_video_keyboard,
     ai_questions_review_keyboard, questions_list_keyboard, question_detail_keyboard,
-    stage_settings_keyboard, video_mode_keyboard, VIDEO_MODE_LABEL,
+    stage_settings_keyboard, mode_choice_keyboard, MODE_LABEL,
 )
 from app.states.admin_state import QuestionEditState
 from app.question_bank import (
@@ -204,40 +204,46 @@ async def vq_clear(callback: CallbackQuery):
 # ══════════════════════════════════════════════════════════════════════════
 
 async def _stage_settings_text(v) -> str:
-    from app.question_bank import stage_max, MAX_TEST, MAX_WRITTEN, MAX_VIDEO
-    q_on = bool(getattr(v, "questions_enabled", True))
-    mode = getattr(v, "video_mode", "required") or "required"
+    from app.question_bank import stage_max, STAGE_ON, MAX_TEST, MAX_WRITTEN, MAX_VIDEO
+    q_mode = getattr(v, "questions_mode", "required") or "required"
+    v_mode = getattr(v, "video_mode", "required") or "required"
     n = await count_vacancy_questions(v.id)
 
     lines = [f"⚙️ <b>{esc(v.title)}</b> — saralash bosqichlari\n"]
-
     lines.append("<b>1️⃣ Ma'lumotlar</b> — doim so'raladi (ism, tel, yosh, maosh…)")
 
-    if q_on:
+    qm = {"required": f"🔴 majburiy — javob bermay ariza yakunlanmaydi",
+          "optional": "🟡 ixtiyoriy — nomzod o'tkazib yuborishi mumkin (0 ball)",
+          "off": "⚫️ o'chirilgan — test va yozma umuman so'ralmaydi"}
+    lines.append(f"<b>2️⃣ Savollar</b> — {qm.get(q_mode, q_mode)}")
+    if q_mode in STAGE_ON:
         if n:
-            lines.append(f"<b>2️⃣ Savollar</b> — ✅ yoqilgan ({n} ta biriktirilgan)")
+            lines.append(f"   <i>{n} ta savol biriktirilgan</i>")
         else:
-            lines.append("<b>2️⃣ Savollar</b> — ✅ yoqilgan, lekin <b>savol biriktirilmagan</b>\n"
-                         "   <i>📝 Savollar bo'limidan qo'shing, aks holda bosqich o'tkazib yuboriladi.</i>")
-    else:
-        lines.append("<b>2️⃣ Savollar</b> — ❌ o'chirilgan (test va yozma so'ralmaydi)")
+            lines.append("   ⚠️ <b>Savol biriktirilmagan!</b> "
+                         "<i>📝 Savollar bo'limidan qo'shing, aks holda bosqich "
+                         "o'tkazib yuboriladi va nomzod 0 ball oladi.</i>")
 
     vm = {"required": "🔴 majburiy — videosiz ariza qabul qilinmaydi",
-          "optional": "🟡 ixtiyoriy — nomzod o'tkazib yuborishi mumkin",
+          "optional": "🟡 ixtiyoriy — nomzod o'tkazib yuborishi mumkin (0 ball)",
           "off": "⚫️ o'chirilgan — video umuman so'ralmaydi"}
-    lines.append(f"<b>3️⃣ Video</b> — {vm.get(mode, mode)}")
+    lines.append(f"<b>3️⃣ Video</b> — {vm.get(v_mode, v_mode)}")
 
-    mx = stage_max(q_on, mode)
+    mx = stage_max(q_mode, v_mode)
     detail = []
-    if q_on:
+    if q_mode in STAGE_ON:
         detail.append(f"test {MAX_TEST} + yozma {MAX_WRITTEN}")
-    if mode in ("required", "optional"):
+    if v_mode in STAGE_ON:
         detail.append(f"video {MAX_VIDEO}")
-    lines.append(f"\n📊 <b>Maksimal ball: {mx}</b> ({' + '.join(detail) if detail else 'baholanmaydi'})")
+    lines.append(f"\n📊 <b>Maksimal ball: {mx}</b> "
+                 f"({' + '.join(detail) if detail else 'baholanmaydi'})")
 
     if mx == 0:
         lines.append("\n⚠️ <b>Barcha bosqich o'chirilgan</b> — bu vakansiyaga faqat "
                      "oddiy ariza olinadi, ball qo'yilmaydi.")
+    elif "optional" in (q_mode, v_mode):
+        lines.append("<i>Ixtiyoriy bosqich ham maksimalga kiradi — "
+                     "o'tkazib yuborgan nomzod 0 ball oladi.</i>")
 
     lines.append("\n<i>O'zgartirish faqat YANGI arizalarga ta'sir qiladi.</i>")
     return "\n".join(lines)
@@ -256,26 +262,26 @@ async def vs_menu(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("vs:q:"))
-async def vs_toggle_questions(callback: CallbackQuery):
-    """Test + yozma savollarni yoqish/o'chirish."""
+@router.callback_query(lambda c: c.data.startswith("vs:qmenu:"))
+async def vs_questions_menu(callback: CallbackQuery):
     if not await _guard(callback):
         return
-    vid = _app_id(callback)
-    v = await get_vacancy(vid)
+    v = await get_vacancy(_app_id(callback))
     if not v:
         await callback.answer("Vakansiya topilmadi.", show_alert=True)
         return
-    new_val = not bool(v.questions_enabled)
-    await update_vacancy(vid, questions_enabled=new_val)
-    v = await get_vacancy(vid)
-    try:
-        await callback.message.edit_text(await _stage_settings_text(v), parse_mode="HTML",
-                                         reply_markup=stage_settings_keyboard(v))
-    except Exception:
-        await callback.message.answer(await _stage_settings_text(v), parse_mode="HTML",
-                                      reply_markup=stage_settings_keyboard(v))
-    await callback.answer("🧠 Savollar " + ("yoqildi ✅" if new_val else "o'chirildi ❌"))
+    await callback.message.answer(
+        "🧠 <b>Savollar bosqichi</b> (3 test + 2 yozma)\n\n"
+        "🔴 <b>Majburiy</b> — nomzod barcha savolga javob bermasa ariza "
+        "yakunlanmaydi.\n\n"
+        "🟡 <b>Ixtiyoriy</b> — bosqich boshida «▶️ Boshlash» va "
+        "«⏭ O'tkazib yuborish» tugmalari chiqadi. O'tkazib yuborgan nomzod "
+        "test va yozma uchun <b>0 ball</b> oladi, lekin arizasi qabul qilinadi.\n\n"
+        "⚫️ <b>O'chirilgan</b> — savollar umuman so'ralmaydi, maksimal ball "
+        "15 ballga kamayadi.",
+        parse_mode="HTML",
+        reply_markup=mode_choice_keyboard(v.id, v.questions_mode or "required", "q"))
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("vs:vmenu:"))
@@ -286,24 +292,21 @@ async def vs_video_menu(callback: CallbackQuery):
     if not v:
         await callback.answer("Vakansiya topilmadi.", show_alert=True)
         return
-    mode = v.video_mode or "required"
     await callback.message.answer(
         "🎥 <b>Video bosqichi</b>\n\n"
         "🔴 <b>Majburiy</b> — nomzod video yubormasa ariza yakunlanmaydi va "
         "HRga yuborilmaydi.\n\n"
         "🟡 <b>Ixtiyoriy</b> — video so'raladi, lekin «⏭ O'tkazib yuborish» "
-        "tugmasi chiqadi. Yubormaganlarning video bali bo'sh qoladi.\n\n"
+        "tugmasi chiqadi. O'tkazib yuborgan nomzod video uchun <b>0 ball</b> "
+        "oladi, lekin arizasi qabul qilinadi.\n\n"
         "⚫️ <b>O'chirilgan</b> — video umuman so'ralmaydi, maksimal ball "
         "4 ballga kamayadi.",
         parse_mode="HTML",
-        reply_markup=video_mode_keyboard(v.id, mode))
+        reply_markup=mode_choice_keyboard(v.id, v.video_mode or "required", "v"))
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("vs:vset:"))
-async def vs_video_set(callback: CallbackQuery):
-    if not await _guard(callback):
-        return
+async def _set_mode(callback: CallbackQuery, field: str, icon: str):
     parts = callback.data.split(":")
     try:
         vid, mode = int(parts[2]), parts[3]
@@ -313,15 +316,30 @@ async def vs_video_set(callback: CallbackQuery):
     if mode not in ("required", "optional", "off"):
         await callback.answer("Noma'lum rejim.", show_alert=True)
         return
-    await update_vacancy(vid, video_mode=mode)
+    await update_vacancy(vid, **{field: mode})
     v = await get_vacancy(vid)
+    text = await _stage_settings_text(v)
     try:
-        await callback.message.edit_text(await _stage_settings_text(v), parse_mode="HTML",
+        await callback.message.edit_text(text, parse_mode="HTML",
                                          reply_markup=stage_settings_keyboard(v))
     except Exception:
-        await callback.message.answer(await _stage_settings_text(v), parse_mode="HTML",
+        await callback.message.answer(text, parse_mode="HTML",
                                       reply_markup=stage_settings_keyboard(v))
-    await callback.answer(f"🎥 Video: {VIDEO_MODE_LABEL.get(mode, mode)}")
+    await callback.answer(f"{icon} {MODE_LABEL.get(mode, mode)}")
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:qset:"))
+async def vs_questions_set(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    await _set_mode(callback, "questions_mode", "🧠 Savollar:")
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:vset:"))
+async def vs_video_set(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    await _set_mode(callback, "video_mode", "🎥 Video:")
 
 
 # ══════════════════════════════════════════════════════════════════════════

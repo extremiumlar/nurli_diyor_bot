@@ -469,24 +469,48 @@ async def _create_and_route(message: Message, state: FSMContext, bot: Bot):
     )
     # Vakansiya sozlamalari: qaysi bosqichlar qo'llaniladi
     vac = await get_vacancy(vacancy_id)
-    q_on = bool(getattr(vac, "questions_enabled", True))
+    from app.question_bank import stage_max, STAGE_ON
+    q_mode = getattr(vac, "questions_mode", "required") or "required"
     v_mode = getattr(vac, "video_mode", "required") or "required"
-    from app.question_bank import stage_max
     await update_application(
         app.id, expected_salary=data.get("expected_salary"), stage="stage1",
-        max_total=stage_max(q_on, v_mode))
-    await state.update_data(app_id=app.id, v_mode=v_mode)
+        max_total=stage_max(q_mode, v_mode))
+    await state.update_data(app_id=app.id, q_mode=q_mode, v_mode=v_mode)
 
-    n_questions = await count_vacancy_questions(vacancy_id) if q_on else 0
+    n_questions = await count_vacancy_questions(vacancy_id) if q_mode in STAGE_ON else 0
     if n_questions == 0:
         # Savollar o'chirilgan yoki biriktirilmagan — to'g'ridan-to'g'ri videoga
-        if v_mode in ("required", "optional"):
-            await message.answer(
-                "✅ Ma'lumotlaringiz uchun rahmat!",
-                reply_markup=cancel_keyboard())
+        if q_mode in STAGE_ON:
+            # Bosqich yoqilgan, lekin savol biriktirilmagan — 0 ball
+            await update_application(app.id, test_score=0, written_score=0)
+        if v_mode in STAGE_ON:
+            await message.answer("✅ Ma'lumotlaringiz uchun rahmat!",
+                                 reply_markup=cancel_keyboard())
             await _ask_video(message, state, bot)
         else:
             await _finish_simple(message, state, bot)
+        return
+
+    await update_application(app.id, stage="stage2")
+    await state.update_data(t_idx=0, w_idx=0)
+
+    if q_mode == "optional":
+        # Ixtiyoriy — nomzodga tanlov beramiz
+        await state.set_state(ScreeningState.test)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Boshlash", callback_data="scr_q:go")],
+            [InlineKeyboardButton(text="⏭ O'tkazib yuborish", callback_data="scr_q:skip")],
+        ])
+        await message.answer(
+            "✅ Ma'lumotlaringiz uchun rahmat!\n\n"
+            "📝 <b>2-bosqich — kasbiy savollar</b>\n"
+            "3 ta test + 2 ta yozma savol, taxminan 5 daqiqa.\n\n"
+            "💡 <b>Bu bosqich ixtiyoriy</b> — o'tkazib yuborsangiz ham arizangiz "
+            "qabul qilinadi. Lekin javob berganlar yuqori ball to'playdi va "
+            "HR e'tiborini ko'proq tortadi.",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
         return
 
     await message.answer(
@@ -496,9 +520,35 @@ async def _create_and_route(message: Message, state: FSMContext, bot: Bot):
         parse_mode="HTML",
         reply_markup=cancel_keyboard()
     )
-    await state.update_data(t_idx=0, w_idx=0)
-    await update_application(app.id, stage="stage2")
     await _present_test(message, state, bot)
+
+
+@router.callback_query(ScreeningState.test, lambda c: c.data == "scr_q:go")
+async def screening_questions_start(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Ixtiyoriy savollarni boshlash."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer()
+    await callback.message.answer("Boshladik 👇", reply_markup=cancel_keyboard())
+    await _present_test(callback.message, state, bot)
+
+
+@router.callback_query(ScreeningState.test, lambda c: c.data == "scr_q:skip")
+async def screening_questions_skip(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Ixtiyoriy savollarni o'tkazib yuborish — test va yozma 0 ball."""
+    data = await state.get_data()
+    await update_application(data["app_id"], test_score=0, written_score=0)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer("Savollar o'tkazib yuborildi")
+    await callback.message.answer(
+        "⏭ Savollar o'tkazib yuborildi.",
+        reply_markup=cancel_keyboard())
+    await _ask_video(callback.message, state, bot)
 
 
 async def _finish_simple(message: Message, state: FSMContext, bot: Bot):
@@ -748,16 +798,21 @@ async def _finalize_screening(message: Message, state: FSMContext, bot: Bot,
         return
 
     answers = await get_application_answers(app_id)
-    test_score = sum((a.score or 0) for a in answers if a.qtype == "test")
+    tests = [a for a in answers if a.qtype == "test"]
 
-    await update_application(
-        app_id,
-        test_score=test_score,
+    fields = dict(
         video_file_id=video_file_id,
         video_is_note=is_note,
         stage="done",
         status="submitted",
     )
+    if tests:
+        fields["test_score"] = sum((a.score or 0) for a in tests)
+    # Ixtiyoriy video o'tkazib yuborilgan bo'lsa — 0 ball (imkoniyat berilgan edi)
+    if video_file_id is None and data.get("v_mode") == "optional":
+        fields["video_score"] = 0
+
+    await update_application(app_id, **fields)
     await state.clear()
 
     await message.answer(

@@ -123,18 +123,18 @@ async def admin_vacancy_detail(callback: CallbackQuery, state: FSMContext):
         return
     v = await get_vacancy(int(val))
     from app.question_bank import stage_max
-    from app.keyboards.inline import VIDEO_MODE_LABEL
-    q_on = bool(getattr(v, "questions_enabled", True))
+    from app.keyboards.inline import MODE_LABEL
+    qmode = getattr(v, "questions_mode", "required") or "required"
     vmode = getattr(v, "video_mode", "required") or "required"
     text = (
         f"💼 <b>{v.title}</b>\n\n"
         f"📋 Talablar:\n{v.requirements or '—'}\n\n"
         f"💰 Ish haqi: {v.salary or 'Kelishiladi'}\n"
         f"Holat: {'🟢 Ochiq' if v.active else '🔴 Yopiq'}\n\n"
-        f"⚙️ <b>Bosqichlar:</b> "
-        f"🧠 Savollar {'✅' if q_on else '❌'} · "
-        f"🎥 Video {VIDEO_MODE_LABEL.get(vmode, vmode)} · "
-        f"maks {stage_max(q_on, vmode)} ball"
+        f"⚙️ <b>Bosqichlar:</b>\n"
+        f"🧠 Savollar: {MODE_LABEL.get(qmode, qmode)}\n"
+        f"🎥 Video: {MODE_LABEL.get(vmode, vmode)}\n"
+        f"📊 Maksimal ball: {stage_max(qmode, vmode)}"
     )
     await callback.message.answer(
         text, parse_mode="HTML",
