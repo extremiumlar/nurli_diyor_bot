@@ -22,7 +22,7 @@ from app.database.crud import (
     count_vacancy_questions, set_questions_from_bank, delete_vacancy_questions,
     update_answer_score, recompute_scores, update_application,
     get_vacancy_questions, save_question_set, get_question, update_question_text,
-    update_question_option, delete_question, add_question,
+    update_question_option, delete_question, add_question, update_vacancy,
 )
 from app.keyboards.inline import (
     vacancy_questions_menu_keyboard, question_templates_keyboard,
@@ -30,6 +30,7 @@ from app.keyboards.inline import (
     confirm_decision_keyboard, grade_menu_keyboard,
     grade_written_keyboard, grade_video_keyboard,
     ai_questions_review_keyboard, questions_list_keyboard, question_detail_keyboard,
+    stage_settings_keyboard, video_mode_keyboard, VIDEO_MODE_LABEL,
 )
 from app.states.admin_state import QuestionEditState
 from app.question_bank import (
@@ -196,6 +197,131 @@ async def vq_clear(callback: CallbackQuery):
         reply_markup=vacancy_questions_menu_keyboard(vid, False, _aiq_on())
     )
     await callback.answer("O'chirildi")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Saralash bosqichlarini boshqarish (yoqish / o'chirish / ixtiyoriy)
+# ══════════════════════════════════════════════════════════════════════════
+
+async def _stage_settings_text(v) -> str:
+    from app.question_bank import stage_max, MAX_TEST, MAX_WRITTEN, MAX_VIDEO
+    q_on = bool(getattr(v, "questions_enabled", True))
+    mode = getattr(v, "video_mode", "required") or "required"
+    n = await count_vacancy_questions(v.id)
+
+    lines = [f"⚙️ <b>{esc(v.title)}</b> — saralash bosqichlari\n"]
+
+    lines.append("<b>1️⃣ Ma'lumotlar</b> — doim so'raladi (ism, tel, yosh, maosh…)")
+
+    if q_on:
+        if n:
+            lines.append(f"<b>2️⃣ Savollar</b> — ✅ yoqilgan ({n} ta biriktirilgan)")
+        else:
+            lines.append("<b>2️⃣ Savollar</b> — ✅ yoqilgan, lekin <b>savol biriktirilmagan</b>\n"
+                         "   <i>📝 Savollar bo'limidan qo'shing, aks holda bosqich o'tkazib yuboriladi.</i>")
+    else:
+        lines.append("<b>2️⃣ Savollar</b> — ❌ o'chirilgan (test va yozma so'ralmaydi)")
+
+    vm = {"required": "🔴 majburiy — videosiz ariza qabul qilinmaydi",
+          "optional": "🟡 ixtiyoriy — nomzod o'tkazib yuborishi mumkin",
+          "off": "⚫️ o'chirilgan — video umuman so'ralmaydi"}
+    lines.append(f"<b>3️⃣ Video</b> — {vm.get(mode, mode)}")
+
+    mx = stage_max(q_on, mode)
+    detail = []
+    if q_on:
+        detail.append(f"test {MAX_TEST} + yozma {MAX_WRITTEN}")
+    if mode in ("required", "optional"):
+        detail.append(f"video {MAX_VIDEO}")
+    lines.append(f"\n📊 <b>Maksimal ball: {mx}</b> ({' + '.join(detail) if detail else 'baholanmaydi'})")
+
+    if mx == 0:
+        lines.append("\n⚠️ <b>Barcha bosqich o'chirilgan</b> — bu vakansiyaga faqat "
+                     "oddiy ariza olinadi, ball qo'yilmaydi.")
+
+    lines.append("\n<i>O'zgartirish faqat YANGI arizalarga ta'sir qiladi.</i>")
+    return "\n".join(lines)
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:menu:"))
+async def vs_menu(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    v = await get_vacancy(_app_id(callback))
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    await callback.message.answer(await _stage_settings_text(v), parse_mode="HTML",
+                                  reply_markup=stage_settings_keyboard(v))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:q:"))
+async def vs_toggle_questions(callback: CallbackQuery):
+    """Test + yozma savollarni yoqish/o'chirish."""
+    if not await _guard(callback):
+        return
+    vid = _app_id(callback)
+    v = await get_vacancy(vid)
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    new_val = not bool(v.questions_enabled)
+    await update_vacancy(vid, questions_enabled=new_val)
+    v = await get_vacancy(vid)
+    try:
+        await callback.message.edit_text(await _stage_settings_text(v), parse_mode="HTML",
+                                         reply_markup=stage_settings_keyboard(v))
+    except Exception:
+        await callback.message.answer(await _stage_settings_text(v), parse_mode="HTML",
+                                      reply_markup=stage_settings_keyboard(v))
+    await callback.answer("🧠 Savollar " + ("yoqildi ✅" if new_val else "o'chirildi ❌"))
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:vmenu:"))
+async def vs_video_menu(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    v = await get_vacancy(_app_id(callback))
+    if not v:
+        await callback.answer("Vakansiya topilmadi.", show_alert=True)
+        return
+    mode = v.video_mode or "required"
+    await callback.message.answer(
+        "🎥 <b>Video bosqichi</b>\n\n"
+        "🔴 <b>Majburiy</b> — nomzod video yubormasa ariza yakunlanmaydi va "
+        "HRga yuborilmaydi.\n\n"
+        "🟡 <b>Ixtiyoriy</b> — video so'raladi, lekin «⏭ O'tkazib yuborish» "
+        "tugmasi chiqadi. Yubormaganlarning video bali bo'sh qoladi.\n\n"
+        "⚫️ <b>O'chirilgan</b> — video umuman so'ralmaydi, maksimal ball "
+        "4 ballga kamayadi.",
+        parse_mode="HTML",
+        reply_markup=video_mode_keyboard(v.id, mode))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("vs:vset:"))
+async def vs_video_set(callback: CallbackQuery):
+    if not await _guard(callback):
+        return
+    parts = callback.data.split(":")
+    try:
+        vid, mode = int(parts[2]), parts[3]
+    except (ValueError, IndexError):
+        await callback.answer("Xato.")
+        return
+    if mode not in ("required", "optional", "off"):
+        await callback.answer("Noma'lum rejim.", show_alert=True)
+        return
+    await update_vacancy(vid, video_mode=mode)
+    v = await get_vacancy(vid)
+    try:
+        await callback.message.edit_text(await _stage_settings_text(v), parse_mode="HTML",
+                                         reply_markup=stage_settings_keyboard(v))
+    except Exception:
+        await callback.message.answer(await _stage_settings_text(v), parse_mode="HTML",
+                                      reply_markup=stage_settings_keyboard(v))
+    await callback.answer(f"🎥 Video: {VIDEO_MODE_LABEL.get(mode, mode)}")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -573,13 +699,14 @@ def _fmt(v, mx):
 
 async def _summary(app) -> str:
     """Ball xulosasi — kartochka ostiga qo'shiladi."""
-    color = color_for(app.total_score) if app.total_score is not None else "⚪️"
+    mx = MAX_TOTAL if app.max_total is None else app.max_total
+    color = color_for(app.total_score, mx)
     return (
         f"{color} <b>{STATUS_LABEL.get(app.status, app.status)}</b>\n"
         f"🧠 Test: {_fmt(app.test_score, MAX_TEST)} · "
         f"✍️ Yozma: {_fmt(app.written_score, MAX_WRITTEN)} · "
         f"🎬 Video: {_fmt(app.video_score, MAX_VIDEO)}\n"
-        f"⭐️ <b>Jami: {_fmt(app.total_score, MAX_TOTAL)}</b>"
+        f"⭐️ <b>Jami: {_fmt(app.total_score, mx) if mx else 'baholanmaydi'}</b>"
     )
 
 

@@ -122,11 +122,19 @@ async def admin_vacancy_detail(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     v = await get_vacancy(int(val))
+    from app.question_bank import stage_max
+    from app.keyboards.inline import VIDEO_MODE_LABEL
+    q_on = bool(getattr(v, "questions_enabled", True))
+    vmode = getattr(v, "video_mode", "required") or "required"
     text = (
         f"💼 <b>{v.title}</b>\n\n"
         f"📋 Talablar:\n{v.requirements or '—'}\n\n"
         f"💰 Ish haqi: {v.salary or 'Kelishiladi'}\n"
-        f"Holat: {'🟢 Ochiq' if v.active else '🔴 Yopiq'}"
+        f"Holat: {'🟢 Ochiq' if v.active else '🔴 Yopiq'}\n\n"
+        f"⚙️ <b>Bosqichlar:</b> "
+        f"🧠 Savollar {'✅' if q_on else '❌'} · "
+        f"🎥 Video {VIDEO_MODE_LABEL.get(vmode, vmode)} · "
+        f"maks {stage_max(q_on, vmode)} ball"
     )
     await callback.message.answer(
         text, parse_mode="HTML",
@@ -957,7 +965,7 @@ async def get_photo(callback: CallbackQuery, bot: Bot):
 EXCEL_HEADERS = [
     "O'rin", "Ariza №", "Topshirilgan", "Holat",
     "Ism familiya", "Telefon", "Yosh", "Qayerdan", "Tillar",
-    "Test (9)", "Yozma (6)", "Video (4)", "JAMI (19)", "Daraja",
+    "Test (9)", "Yozma (6)", "Video (4)", "JAMI", "Maks", "Foiz", "Daraja",
     "Kutgan maosh", "Ma'lumot", "Ish tajribasi", "Qo'shimcha ko'nikmalar",
     "Video", "Rasm",
 ]
@@ -1000,8 +1008,9 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
     from io import BytesIO
     from datetime import datetime
     from app.question_bank import (
-        excel_fill_for, MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
-        COLOR_GREEN_MIN, COLOR_YELLOW_MIN,
+        excel_fill_for, level_name, score_pct,
+        MAX_TEST, MAX_WRITTEN, MAX_VIDEO, MAX_TOTAL,
+        PCT_GREEN_MIN, PCT_YELLOW_MIN,
     )
 
     # DIQQAT: hech qanday ariza YASHIRILMAYDI — hammasi hisobotga tushadi.
@@ -1057,9 +1066,9 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
                 created = (a.created_at.strftime("%Y-%m-%d %H:%M")
                            if isinstance(a.created_at, datetime) else str(a.created_at))
             total = a.total_score
-            daraja = ("Yuqori" if total is not None and total >= COLOR_GREEN_MIN else
-                      "O'rta" if total is not None and total >= COLOR_YELLOW_MIN else
-                      "Past" if total is not None else "Baholanmagan")
+            mx = MAX_TOTAL if a.max_total is None else a.max_total
+            pct = score_pct(total, mx)
+            daraja = level_name(total, mx)
             ws.append([
                 pos,
                 a.id,
@@ -1073,7 +1082,9 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
                 a.test_score if a.test_score is not None else "",
                 a.written_score if a.written_score is not None else "",
                 a.video_score if a.video_score is not None else "",
-                total if total is not None else "",
+                total if total is not None and mx else "",
+                mx if mx else "—",
+                f"{pct}%" if pct is not None else "—",
                 daraja,
                 a.expected_salary or "",
                 a.education or "",
@@ -1083,19 +1094,20 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
                 "Bor" if a.photo_file_id else "yo'q",
             ])
             r = ws.max_row
-            fill = PatternFill(start_color=excel_fill_for(total),
-                               end_color=excel_fill_for(total), fill_type="solid")
+            fill = PatternFill(start_color=excel_fill_for(total, mx),
+                               end_color=excel_fill_for(total, mx), fill_type="solid")
             for col_idx in range(1, len(EXCEL_HEADERS) + 1):
                 c = ws.cell(row=r, column=col_idx)
                 c.fill, c.border = fill, border
-                if col_idx in (1, 2, 7, 10, 11, 12, 13, 14, 19, 20):
+                if col_idx in (1, 2, 7, 10, 11, 12, 13, 14, 15, 16, 21, 22):
                     c.alignment = center
             # Jami ball — qalin
             ws.cell(row=r, column=13).font = Font(bold=True)
+            ws.cell(row=r, column=15).font = Font(bold=True)
             total_rows += 1
 
         widths = [6, 8, 17, 18, 24, 15, 6, 18, 16,
-                  9, 10, 9, 10, 13, 16, 16, 30, 28, 7, 7]
+                  9, 10, 9, 8, 7, 8, 13, 16, 16, 30, 28, 7, 7]
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
         ws.row_dimensions[1].height = 32
@@ -1120,9 +1132,9 @@ async def export_applications_xlsx(callback: CallbackQuery, bot: Bot):
             + (f"<i>Shundan {n_incomplete} tasi tugatilmagan — ro'yxat oxirida.</i>\n"
                if n_incomplete else "")
             + "\n"
-            f"🟩 Yuqori ({COLOR_GREEN_MIN}-{MAX_TOTAL} ball)   "
-            f"🟨 O'rta ({COLOR_YELLOW_MIN}-{COLOR_GREEN_MIN - 1})   "
-            f"🟥 Past (0-{COLOR_YELLOW_MIN - 1})\n"
+            f"🟩 Yuqori ({PCT_GREEN_MIN}%+)   "
+            f"🟨 O'rta ({PCT_YELLOW_MIN}-{PCT_GREEN_MIN - 1}%)   "
+            f"🟥 Past (0-{PCT_YELLOW_MIN - 1}%)\n"
             f"⬜️ Baholanmagan — yozma/video bali qo'yilmagan\n\n"
             f"<i>Har sahifada nomzodlar ball bo'yicha yuqoridan pastga tartiblangan.</i>"
         ),

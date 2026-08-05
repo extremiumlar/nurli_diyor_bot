@@ -77,6 +77,9 @@ class Vacancy(Base):
     salary: Mapped[str | None] = mapped_column(String(128), nullable=True)
     salary_ceiling: Mapped[int | None] = mapped_column(Integer, nullable=True)  # byudjet shifti (💰 belgi uchun)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # ── Saralash bosqichlarini boshqarish (admin sozlaydi) ─────────────
+    questions_enabled: Mapped[bool] = mapped_column(Boolean, default=True)   # test + yozma
+    video_mode: Mapped[str] = mapped_column(String(10), default="required")  # required|optional|off
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -120,6 +123,7 @@ class Application(Base):
     written_score: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 0–6
     video_score: Mapped[int | None] = mapped_column(Integer, nullable=True)     # 0–4
     total_score: Mapped[int | None] = mapped_column(Integer, nullable=True)     # 0–19
+    max_total: Mapped[int | None] = mapped_column(Integer, nullable=True)       # shu ariza necha balldan baholangan
     video_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     video_is_note: Mapped[bool] = mapped_column(Boolean, default=False)         # video_note (dumaloq) yoki oddiy video
     hr_note: Mapped[str | None] = mapped_column(Text, nullable=True)

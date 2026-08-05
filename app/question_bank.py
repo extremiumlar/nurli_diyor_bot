@@ -857,8 +857,31 @@ MAX_WRITTEN = 6
 MAX_VIDEO = 4
 MAX_TOTAL = 19
 
-COLOR_GREEN_MIN = 14   # yashil >= 14
+COLOR_GREEN_MIN = 14   # yashil >= 14 (19 balldan)
 COLOR_YELLOW_MIN = 9   # sariq 9-13, qizil <= 8
+
+# Bosqichlar o'chirilgan bo'lsa maksimal ball o'zgaradi (masalan 15 yoki 4).
+# Shuning uchun rang FOIZ bo'yicha aniqlanadi — chegaralar 19 ballik
+# tizimdan olingan: 14/19 = 73.7%, 9/19 = 47.4%
+PCT_GREEN_MIN = 73
+PCT_YELLOW_MIN = 47
+
+
+def stage_max(questions_enabled: bool, video_mode: str) -> int:
+    """Vakansiya sozlamalariga qarab maksimal ball."""
+    total = 0
+    if questions_enabled:
+        total += MAX_TEST + MAX_WRITTEN
+    if video_mode in ("required", "optional"):
+        total += MAX_VIDEO
+    return total
+
+
+def score_pct(total: int | None, max_total: int | None) -> int | None:
+    """Ballni foizga o'giradi."""
+    if total is None or not max_total:
+        return None
+    return round(total * 100 / max_total)
 
 # Excel uchun rang kodlari (ARGB, openpyxl)
 XL_GREEN = "C6EFCE"
@@ -867,22 +890,41 @@ XL_RED = "FFC7CE"
 XL_GREY = "E7E9EB"
 
 
-def color_for(total: int | None) -> str:
-    if total is None:
+def _eff_max(max_total: int | None) -> int:
+    """max_total=0 — baholanadigan bosqich yo'q (0 ni 19 ga aylantirmaymiz)."""
+    return MAX_TOTAL if max_total is None else max_total
+
+
+def color_for(total: int | None, max_total: int | None = MAX_TOTAL) -> str:
+    """Rang teg. max_total berilmasa 19 ballik tizim deb hisoblanadi."""
+    pct = score_pct(total, _eff_max(max_total))
+    if pct is None:
         return "\u26aa\ufe0f"
-    if total >= COLOR_GREEN_MIN:
+    if pct >= PCT_GREEN_MIN:
         return "\U0001f7e2"
-    if total >= COLOR_YELLOW_MIN:
+    if pct >= PCT_YELLOW_MIN:
         return "\U0001f7e1"
     return "\U0001f534"
 
 
-def excel_fill_for(total: int | None) -> str:
+def excel_fill_for(total: int | None, max_total: int | None = MAX_TOTAL) -> str:
     """Excel katakchasi uchun fon rangi."""
-    if total is None:
+    pct = score_pct(total, _eff_max(max_total))
+    if pct is None:
         return XL_GREY
-    if total >= COLOR_GREEN_MIN:
+    if pct >= PCT_GREEN_MIN:
         return XL_GREEN
-    if total >= COLOR_YELLOW_MIN:
+    if pct >= PCT_YELLOW_MIN:
         return XL_YELLOW
     return XL_RED
+
+
+def level_name(total: int | None, max_total: int | None = MAX_TOTAL) -> str:
+    pct = score_pct(total, _eff_max(max_total))
+    if pct is None:
+        return "Baholanmaydi"
+    if pct >= PCT_GREEN_MIN:
+        return "Yuqori"
+    if pct >= PCT_YELLOW_MIN:
+        return "O'rta"
+    return "Past"

@@ -670,8 +670,10 @@ async def set_answer_ai_feedback(answer_id: int, feedback: str | None):
 
 async def recompute_scores(app_id: int):
     """Ariza ballarini javoblardan qayta hisoblaydi.
-    written_score — barcha yozma javob ballansa; total — uch ball ham bo'lsa."""
-    from app.question_bank import color_for
+
+    Jami ball faqat QO'LLANILADIGAN bosqichlar to'liq baholanganda chiqadi.
+    Masalan video o'chirilgan vakansiyada video bali kutilmaydi.
+    """
     async with async_session() as session:
         app = await session.get(Application, app_id)
         if not app:
@@ -688,9 +690,24 @@ async def recompute_scores(app_id: int):
         if written and all(a.score is not None for a in written):
             app.written_score = sum(a.score for a in written)
 
-        if (app.test_score is not None and app.written_score is not None
-                and app.video_score is not None):
-            app.total_score = app.test_score + app.written_score + app.video_score
+        # Qaysi bosqichlar shu arizaga tegishli — vakansiya sozlamasidan
+        vac = await session.get(Vacancy, app.vacancy_id) if app.vacancy_id else None
+        q_on = True if vac is None else bool(vac.questions_enabled)
+        v_mode = "required" if vac is None else (vac.video_mode or "required")
+
+        parts, ready = 0, True
+        if q_on:
+            if app.test_score is None or app.written_score is None:
+                ready = False
+            else:
+                parts += app.test_score + app.written_score
+        if v_mode in ("required", "optional"):
+            if app.video_score is None:
+                ready = False
+            else:
+                parts += app.video_score
+
+        app.total_score = parts if ready else None
         await session.commit()
         await session.refresh(app)
         return app

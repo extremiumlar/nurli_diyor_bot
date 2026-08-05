@@ -240,6 +240,7 @@ def admin_vacancy_detail_keyboard(vacancy_id: int, active: bool):
         )],
         [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"admin_vacancy_edit:{vacancy_id}")],
         [InlineKeyboardButton(text="📝 Savollar", callback_data=f"vq:menu:{vacancy_id}")],
+        [InlineKeyboardButton(text="⚙️ Bosqichlar", callback_data=f"vs:menu:{vacancy_id}")],
         [InlineKeyboardButton(text="📣 E'lon qilish", callback_data=f"vann:menu:{vacancy_id}")],
         [InlineKeyboardButton(text="📁 Arizalar", callback_data=f"admin_apps:{vacancy_id}")],
         [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"admin_vacancy_delete:{vacancy_id}")],
@@ -360,6 +361,39 @@ def vacancy_questions_menu_keyboard(vacancy_id: int, has_questions: bool,
         rows.append([InlineKeyboardButton(text="✍️ Qo'lda yaratish",
                                           callback_data=f"vq:edit:{vacancy_id}")])
     rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{vacancy_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+VIDEO_MODE_LABEL = {
+    "required": "🔴 Majburiy",
+    "optional": "🟡 Ixtiyoriy",
+    "off":      "⚫️ O'chirilgan",
+}
+
+
+def stage_settings_keyboard(v):
+    """Vakansiya bosqichlarini boshqarish menyusi."""
+    q_on = bool(getattr(v, "questions_enabled", True))
+    mode = getattr(v, "video_mode", "required") or "required"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"🧠 Savollar: {'✅ Yoqilgan' if q_on else '❌ O‘chirilgan'}",
+            callback_data=f"vs:q:{v.id}")],
+        [InlineKeyboardButton(
+            text=f"🎥 Video: {VIDEO_MODE_LABEL.get(mode, mode)}",
+            callback_data=f"vs:vmenu:{v.id}")],
+        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"admin_vacancy:{v.id}")],
+    ])
+
+
+def video_mode_keyboard(vacancy_id: int, current: str):
+    """Video rejimini tanlash."""
+    rows = []
+    for mode, label in VIDEO_MODE_LABEL.items():
+        mark = "✅ " if mode == current else ""
+        rows.append([InlineKeyboardButton(
+            text=f"{mark}{label}", callback_data=f"vs:vset:{vacancy_id}:{mode}")])
+    rows.append([InlineKeyboardButton(text="◀️ Ortga", callback_data=f"vs:menu:{vacancy_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

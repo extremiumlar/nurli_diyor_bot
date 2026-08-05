@@ -467,13 +467,26 @@ async def _create_and_route(message: Message, state: FSMContext, bot: Bot):
         photo_file_id=data.get("photo_file_id"),
         cv_file_id=None
     )
-    await update_application(app.id, expected_salary=data.get("expected_salary"), stage="stage1")
-    await state.update_data(app_id=app.id)
+    # Vakansiya sozlamalari: qaysi bosqichlar qo'llaniladi
+    vac = await get_vacancy(vacancy_id)
+    q_on = bool(getattr(vac, "questions_enabled", True))
+    v_mode = getattr(vac, "video_mode", "required") or "required"
+    from app.question_bank import stage_max
+    await update_application(
+        app.id, expected_salary=data.get("expected_salary"), stage="stage1",
+        max_total=stage_max(q_on, v_mode))
+    await state.update_data(app_id=app.id, v_mode=v_mode)
 
-    n_questions = await count_vacancy_questions(vacancy_id)
+    n_questions = await count_vacancy_questions(vacancy_id) if q_on else 0
     if n_questions == 0:
-        # Savol biriktirilmagan vakansiya — oddiy ariza
-        await _finish_simple(message, state, bot)
+        # Savollar o'chirilgan yoki biriktirilmagan — to'g'ridan-to'g'ri videoga
+        if v_mode in ("required", "optional"):
+            await message.answer(
+                "✅ Ma'lumotlaringiz uchun rahmat!",
+                reply_markup=cancel_keyboard())
+            await _ask_video(message, state, bot)
+        else:
+            await _finish_simple(message, state, bot)
         return
 
     await message.answer(
@@ -644,11 +657,29 @@ async def screening_written_wrong(message: Message):
 
 async def _ask_video(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
+    v_mode = data.get("v_mode", "required")
+
+    # Video o'chirilgan bo'lsa — bu bosqich butunlay o'tkazib yuboriladi
+    if v_mode == "off":
+        await _finalize_screening(message, state, bot, video_file_id=None, is_note=False)
+        return
+
     await update_application(data["app_id"], stage="stage3")
     await state.set_state(ScreeningState.video)
 
     vqs = await get_vacancy_questions(data["vacancy_id"], qtype="video")
     video_q = vqs[0].text if vqs else "Nega aynan shu lavozimda ishlamoqchisiz?"
+
+    if v_mode == "optional":
+        tail = ("💡 <b>Video ixtiyoriy</b> — yubormasangiz ham arizangiz qabul "
+                "qilinadi. Lekin video yuborganlar HR e'tiborini ko'proq tortadi.")
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=SKIP_BTN)], [KeyboardButton(text=CANCEL_BTN)]],
+            resize_keyboard=True)
+    else:
+        tail = ("⚠️ <b>Video majburiy.</b> Videosiz arizangiz HR mutaxassisiga "
+                "yuborilmaydi va ko'rib chiqilmaydi.")
+        kb = cancel_keyboard()
 
     await message.answer(
         "🎥 <b>Oxirgi bosqich — qisqa video (30-60 soniya)</b>\n\n"
@@ -656,11 +687,22 @@ async def _ask_video(message: Message, state: FSMContext, bot: Bot):
         f"❓ <b>{esc(video_q)}</b>\n\n"
         "🔵 Xohlasangiz <b>yumaloq video-xabar</b>, xohlasangiz <b>oddiy video</b> "
         "yuborishingiz mumkin — ikkalasi ham bo'ladi.\n\n"
-        "⚠️ <b>Video majburiy.</b> Videosiz arizangiz HR mutaxassisiga "
-        "yuborilmaydi va ko'rib chiqilmaydi.",
+        f"{tail}",
         parse_mode="HTML",
-        reply_markup=cancel_keyboard()
+        reply_markup=kb
     )
+
+
+@router.message(ScreeningState.video, F.text == SKIP_BTN)
+async def screening_skip_video(message: Message, state: FSMContext, bot: Bot):
+    """Video ixtiyoriy bo'lgan vakansiyada o'tkazib yuborish."""
+    data = await state.get_data()
+    if data.get("v_mode") != "optional":
+        await message.answer(
+            "⚠️ Bu lavozimda video <b>majburiy</b>. Iltimos, video yuboring.",
+            parse_mode="HTML", reply_markup=cancel_keyboard())
+        return
+    await _finalize_screening(message, state, bot, video_file_id=None, is_note=False)
 
 
 @router.message(ScreeningState.video, F.video)
@@ -676,19 +718,27 @@ async def screening_get_video_note(message: Message, state: FSMContext, bot: Bot
 
 
 @router.message(ScreeningState.video)
-async def screening_video_wrong(message: Message):
+async def screening_video_wrong(message: Message, state: FSMContext):
+    data = await state.get_data()
+    if data.get("v_mode") == "optional":
+        tail = "💡 Yubormoqchi bo'lmasangiz «⏭ O'tkazib yuborish» tugmasini bosing."
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=SKIP_BTN)], [KeyboardButton(text=CANCEL_BTN)]],
+            resize_keyboard=True)
+    else:
+        tail = "⚠️ Videosiz arizangiz HRga yuborilmaydi."
+        kb = cancel_keyboard()
     await message.answer(
         "❌ Bu video emas.\n\n"
         "Iltimos, <b>video</b> yoki <b>yumaloq video-xabar</b> yuboring "
-        "(30-60 soniya).\n\n"
-        "⚠️ Videosiz arizangiz HRga yuborilmaydi.",
+        f"(30-60 soniya).\n\n{tail}",
         parse_mode="HTML",
-        reply_markup=cancel_keyboard()
+        reply_markup=kb
     )
 
 
 async def _finalize_screening(message: Message, state: FSMContext, bot: Bot,
-                              video_file_id: str, is_note: bool):
+                              video_file_id: str | None, is_note: bool):
     data = await state.get_data()
     app_id = data.get("app_id")
     if not app_id:
