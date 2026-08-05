@@ -43,71 +43,69 @@ async def _table_exists(conn, table: str) -> bool:
     return res.first() is not None
 
 
+async def _fix(conn) -> None:
+    """Eski arizalar holatini tuzatadi."""
+    for t in ("applications", "application_answers"):
+        if not await _table_exists(conn, t):
+            print(f"⏭  '{t}' jadvali yo'q — migratsiya kerak emas.")
+            return
+
+    # 1) Saralash davri qachon boshlangan?
+    res = await conn.execute(text(
+        "SELECT MIN(created_at) FROM applications "
+        "WHERE id IN (SELECT DISTINCT application_id FROM application_answers)"
+    ))
+    cutoff = res.scalar()
+
+    params = {}
+    where = ("status = 'in_progress' "
+             "AND id NOT IN (SELECT DISTINCT application_id FROM application_answers)")
+    if cutoff is not None:
+        where += " AND created_at < :cutoff"
+        params["cutoff"] = cutoff
+        print(f"Saralash davri boshlanishi: {cutoff}")
+        print("Shu vaqtdan OLDIN yaratilgan, javobi yo'q arizalar tuzatiladi.")
+    else:
+        print("Hali saralashdan o'tgan ariza yo'q —")
+        print("barcha 'in_progress' arizalar eski deb hisoblanadi.")
+
+    # 2) Nechta ariza tuzatiladi?
+    res = await conn.execute(
+        text(f"SELECT COUNT(*) FROM applications WHERE {where}"), params)
+    n = res.scalar() or 0
+
+    # 3) Javobi bor 'in_progress' arizalar (ularga tegilmaydi)
+    res = await conn.execute(text(
+        "SELECT COUNT(*) FROM applications WHERE status = 'in_progress' "
+        "AND id IN (SELECT DISTINCT application_id FROM application_answers)"))
+    skipped = res.scalar() or 0
+    if skipped:
+        print(f"  ⏭  {skipped} ta arizaga tegilmaydi (javoblari bor — yangi oqimdan)")
+
+    if not n:
+        print("  ✅ Tuzatishga ariza yo'q — hammasi joyida.")
+        return
+
+    print(f"  ✏️  {n} ta ariza tuzatiladi")
+    res = await conn.execute(
+        text(f"SELECT id, full_name, created_at FROM applications "
+             f"WHERE {where} ORDER BY id LIMIT 10"), params)
+    for row in res.fetchall():
+        print(f"     #{row[0]:<5} {(row[1] or '—')[:28]:<28} {row[2]}")
+    if n > 10:
+        print(f"     … va yana {n - 10} ta")
+
+    await conn.execute(
+        text(f"UPDATE applications SET status = 'submitted', stage = 'done' "
+             f"WHERE {where}"), params)
+    print(f"  ✅ {n} ta eski ariza tuzatildi (status=submitted, stage=done).")
+    print("     Endi ular Excel hisobotida va HR ro'yxatlarida ko'rinadi.")
+
+
 async def main():
     print(f"Dialekt: {engine.dialect.name}")
     async with engine.begin() as conn:
-        for t in ("applications", "application_answers"):
-            if not await _table_exists(conn, t):
-                print(f"⏭  '{t}' jadvali yo'q — migratsiya kerak emas.")
-                print("migrate_v4 muvaffaqiyatli tugadi!")
-                return
-
-        # 1) Saralash davri qachon boshlangan?
-        res = await conn.execute(text(
-            "SELECT MIN(created_at) FROM applications "
-            "WHERE id IN (SELECT DISTINCT application_id FROM application_answers)"
-        ))
-        cutoff = res.scalar()
-
-        params = {}
-        where = "status = 'in_progress' " \
-                "AND id NOT IN (SELECT DISTINCT application_id FROM application_answers)"
-        if cutoff is not None:
-            where += " AND created_at < :cutoff"
-            params["cutoff"] = cutoff
-            print(f"Saralash davri boshlanishi: {cutoff}")
-            print("Shu vaqtdan OLDIN yaratilgan, javobi yo'q arizalar tuzatiladi.")
-        else:
-            print("Hali saralashdan o'tgan ariza yo'q —")
-            print("barcha 'in_progress' arizalar eski deb hisoblanadi.")
-
-        # 2) Nechta ariza tuzatiladi?
-        res = await conn.execute(
-            text(f"SELECT COUNT(*) FROM applications WHERE {where}"), params)
-        n = res.scalar() or 0
-
-        # 3) Javobi bor 'in_progress' arizalar (ularga tegilmaydi)
-        res = await conn.execute(text(
-            "SELECT COUNT(*) FROM applications WHERE status = 'in_progress' "
-            "AND id IN (SELECT DISTINCT application_id FROM application_answers)"))
-        skipped = res.scalar() or 0
-
-        if skipped:
-            print(f"  ⏭  {skipped} ta arizaga tegilmaydi (javoblari bor — yangi oqimdan)")
-
-        if not n:
-            print("\n✅ Tuzatishga ariza yo'q — hammasi joyida.")
-            return
-
-        print(f"  ✏️  {n} ta ariza tuzatiladi")
-
-        # Namuna ko'rsatamiz
-        res = await conn.execute(
-            text(f"SELECT id, full_name, created_at FROM applications "
-                 f"WHERE {where} ORDER BY id LIMIT 10"), params)
-        for row in res.fetchall():
-            name = (row[1] or "—")[:28]
-            print(f"     #{row[0]:<5} {name:<28} {row[2]}")
-        if n > 10:
-            print(f"     … va yana {n - 10} ta")
-
-        # 4) Tuzatamiz
-        await conn.execute(
-            text(f"UPDATE applications SET status = 'submitted', stage = 'done' "
-                 f"WHERE {where}"), params)
-        print(f"\n✅ {n} ta eski ariza tuzatildi (status=submitted, stage=done).")
-        print("   Endi ular Excel hisobotida va HR ro'yxatlarida ko'rinadi.")
-
+        await _fix(conn)
     print("migrate_v4 muvaffaqiyatli tugadi!")
 
 

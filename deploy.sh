@@ -64,18 +64,22 @@ fi
 step "Migratsiyalar"
 for m in migrate_v2 migrate_v3 migrate_v4 migrate_v5 migrate_v6; do
     [ -f "$m.py" ] || continue
-    out=$(python "$m.py" 2>&1 | grep -Ev "INFO sqlalchemy|^\s*(SELECT|FROM|WHERE|UPDATE|INSERT|\[|\()" || true)
-    if echo "$out" | grep -q "tugadi"; then
-        changed=$(echo "$out" | grep -c "^OK:" || true)
-        if [ "$changed" -gt 0 ]; then
+    # Muvaffaqiyat CHIQISH KODI bilan aniqlanadi (matnga tayanmaymiz)
+    if out=$(python "$m.py" 2>&1); then
+        clean=$(echo "$out" | grep -Ev "INFO sqlalchemy|^[[:space:]]*(SELECT|FROM|WHERE|UPDATE|INSERT|\[|\()" || true)
+        changed=$(echo "$clean" | grep -c "^OK:" || true)
+        important=$(echo "$clean" | grep -E "^(OK:|  (✏️|✅|⏭))" || true)
+        if [ -n "$important" ]; then
+            ok "$m"
+            echo "$important" | sed 's/^/    /'
+        elif [ "$changed" -gt 0 ]; then
             ok "$m — $changed ta o'zgarish"
-            echo "$out" | grep "^OK:" | sed 's/^/    /'
         else
             ok "$m — o'zgarishsiz"
         fi
     else
-        echo "$out" | tail -5
-        die "$m ishlamadi"
+        echo "$out" | grep -Ev "INFO sqlalchemy" | tail -12
+        die "$m ishlamadi (chiqish kodi $?)"
     fi
 done
 
