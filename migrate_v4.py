@@ -17,78 +17,98 @@ Chegara qanday aniqlanadi (xavfsiz usul):
 
 Yangi oqimda yarim tashlab ketilgan arizalarga TEGILMAYDI.
 
-SQLite va PostgreSQL ikkalasiga mos. Bir necha marta ishga tushirilsa ham
-xavfsiz (ikkinchi safar o'zgartiradigan narsa qolmaydi).
+DIQQAT: bu fayl ORM modellarini ISHLATMAYDI — faqat toza SQL.
+Sababi: modelda keyingi migratsiyalarda qo'shiladigan ustunlar bo'lishi
+mumkin, va ular hali bazada bo'lmasa ORM so'rovi yiqiladi.
+
+SQLite va PostgreSQL ikkalasiga mos, idempotent.
 
 Ishga tushirish (virtualenv AKTIV holatda):
     source /home/bulutlii/virtualenv/nurli_diyor_bot/3.11/bin/activate
     cd /home/bulutlii/nurli_diyor_bot && python migrate_v4.py
 """
 import asyncio
-from sqlalchemy import select, func, update as sql_update
-from app.database.connect import engine, async_session
-from app.database.models import Application, ApplicationAnswer
+from sqlalchemy import text
+from app.database.connect import engine
+
+
+async def _table_exists(conn, table: str) -> bool:
+    if engine.dialect.name == "sqlite":
+        res = await conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table})
+    else:
+        res = await conn.execute(text(
+            "SELECT table_name FROM information_schema.tables WHERE table_name=:t"),
+            {"t": table})
+    return res.first() is not None
 
 
 async def main():
     print(f"Dialekt: {engine.dialect.name}")
-    async with async_session() as s:
+    async with engine.begin() as conn:
+        for t in ("applications", "application_answers"):
+            if not await _table_exists(conn, t):
+                print(f"⏭  '{t}' jadvali yo'q — migratsiya kerak emas.")
+                print("migrate_v4 muvaffaqiyatli tugadi!")
+                return
+
         # 1) Saralash davri qachon boshlangan?
-        res = await s.execute(
-            select(func.min(Application.created_at))
-            .where(Application.id.in_(select(ApplicationAnswer.application_id).distinct()))
-        )
+        res = await conn.execute(text(
+            "SELECT MIN(created_at) FROM applications "
+            "WHERE id IN (SELECT DISTINCT application_id FROM application_answers)"
+        ))
         cutoff = res.scalar()
 
-        # 2) Tuzatishga nomzod arizalar
-        q = select(Application).where(Application.status == "in_progress")
+        params = {}
+        where = "status = 'in_progress' " \
+                "AND id NOT IN (SELECT DISTINCT application_id FROM application_answers)"
         if cutoff is not None:
-            q = q.where(Application.created_at < cutoff)
+            where += " AND created_at < :cutoff"
+            params["cutoff"] = cutoff
             print(f"Saralash davri boshlanishi: {cutoff}")
-            print("Shu vaqtdan OLDIN yaratilgan tugatilmagan arizalar tuzatiladi.")
+            print("Shu vaqtdan OLDIN yaratilgan, javobi yo'q arizalar tuzatiladi.")
         else:
             print("Hali saralashdan o'tgan ariza yo'q —")
             print("barcha 'in_progress' arizalar eski deb hisoblanadi.")
 
-        res = await s.execute(q)
-        olds = res.scalars().all()
+        # 2) Nechta ariza tuzatiladi?
+        res = await conn.execute(
+            text(f"SELECT COUNT(*) FROM applications WHERE {where}"), params)
+        n = res.scalar() or 0
 
-        if not olds:
-            print("\n✅ Tuzatishga ariza yo'q — hammasi joyida.")
-            await engine.dispose()
-            return
+        # 3) Javobi bor 'in_progress' arizalar (ularga tegilmaydi)
+        res = await conn.execute(text(
+            "SELECT COUNT(*) FROM applications WHERE status = 'in_progress' "
+            "AND id IN (SELECT DISTINCT application_id FROM application_answers)"))
+        skipped = res.scalar() or 0
 
-        # 3) Javobi bor arizalarga TEGMAYMIZ (ular yangi oqimdan)
-        res = await s.execute(select(ApplicationAnswer.application_id).distinct())
-        with_answers = set(res.scalars().all())
-        targets = [a for a in olds if a.id not in with_answers]
-        skipped = len(olds) - len(targets)
-
-        print(f"\nTopildi: {len(olds)} ta 'in_progress' ariza")
         if skipped:
-            print(f"  ⏭  {skipped} tasiga tegilmadi (javoblari bor — yangi oqimdan)")
-        print(f"  ✏️  {len(targets)} tasi tuzatiladi")
+            print(f"  ⏭  {skipped} ta arizaga tegilmaydi (javoblari bor — yangi oqimdan)")
 
-        if not targets:
-            print("\n✅ Tuzatishga ariza qolmadi.")
-            await engine.dispose()
+        if not n:
+            print("\n✅ Tuzatishga ariza yo'q — hammasi joyida.")
             return
 
-        for a in targets[:10]:
-            print(f"     #{a.id:<5} {(a.full_name or '—')[:28]:<28} {a.created_at}")
-        if len(targets) > 10:
-            print(f"     … va yana {len(targets) - 10} ta")
+        print(f"  ✏️  {n} ta ariza tuzatiladi")
 
-        await s.execute(
-            sql_update(Application)
-            .where(Application.id.in_([a.id for a in targets]))
-            .values(status="submitted", stage="done")
-        )
-        await s.commit()
-        print(f"\n✅ {len(targets)} ta eski ariza tuzatildi (status=submitted, stage=done).")
+        # Namuna ko'rsatamiz
+        res = await conn.execute(
+            text(f"SELECT id, full_name, created_at FROM applications "
+                 f"WHERE {where} ORDER BY id LIMIT 10"), params)
+        for row in res.fetchall():
+            name = (row[1] or "—")[:28]
+            print(f"     #{row[0]:<5} {name:<28} {row[2]}")
+        if n > 10:
+            print(f"     … va yana {n - 10} ta")
+
+        # 4) Tuzatamiz
+        await conn.execute(
+            text(f"UPDATE applications SET status = 'submitted', stage = 'done' "
+                 f"WHERE {where}"), params)
+        print(f"\n✅ {n} ta eski ariza tuzatildi (status=submitted, stage=done).")
         print("   Endi ular Excel hisobotida va HR ro'yxatlarida ko'rinadi.")
 
-    await engine.dispose()
+    print("migrate_v4 muvaffaqiyatli tugadi!")
 
 
 if __name__ == "__main__":
