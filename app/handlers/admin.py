@@ -1,9 +1,11 @@
+import html
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.config import SUPER_ADMIN_ID
+from app.question_bank import color_for
 from app.database.crud import (
     get_admin, get_all_admins, add_admin, remove_admin, update_admin_role,
     get_all_vacancies, get_vacancy, create_vacancy, toggle_vacancy, delete_vacancy,
@@ -567,7 +569,7 @@ async def admin_applications(callback: CallbackQuery):
         for v in vacancies
     ]
     buttons.append([InlineKeyboardButton(text="📁 Barcha arizalar", callback_data="admin_apps:all")])
-    buttons.append([InlineKeyboardButton(text="🔍 Tartib bo'yicha qidirish", callback_data="admin_app_search")])
+    buttons.append([InlineKeyboardButton(text="🔍 Nomzod qidirish", callback_data="admin_app_search")])
     buttons.append([InlineKeyboardButton(text="📢 Guruhga yuborish",          callback_data="app_post:menu")])
     await callback.message.answer(
         "Vakansiya tanlang:",
@@ -669,7 +671,129 @@ async def show_applications(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
-# ── Ariza qidirish (tartib raqami bo'yicha) ───────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════
+#  Ariza qidirish — KO'P nomzodni birdan
+#
+#  Qabul qilinadi:
+#    45              — bitta tartib raqami
+#    3 7 12          — bir nechta raqam (bo'sh joy bilan)
+#    3, 7, 12        — vergul bilan
+#    10-25           — oraliq
+#    1-5, 9, Ali     — aralash (raqam, oraliq va ism birga)
+#    Ali, Hasan      — bir nechta ism
+#    901234567       — telefon (bo'lagi ham bo'ladi)
+#  Qidiruv rejimi YOPILMAGUNCHA ochiq turadi — ketma-ket qidiraverish mumkin.
+# ══════════════════════════════════════════════════════════════════════════
+
+SEARCH_MAX_CARDS = 30      # bittada nechta kartochka yuborilsin
+SEARCH_HELP = (
+    "🔍 <b>Nomzod qidirish</b>\n\n"
+    "Bir nechtasini birdan qidirish mumkin:\n"
+    "• <code>45</code> — tartib raqami\n"
+    "• <code>3 7 12</code> yoki <code>3, 7, 12</code> — bir nechta raqam\n"
+    "• <code>10-25</code> — oraliq\n"
+    "• <code>1-5, 9, Ali</code> — aralash\n"
+    "• <code>Ali, Hasan</code> — bir nechta ism\n"
+    "• <code>901234567</code> — telefon (bo'lagi ham bo'ladi)\n\n"
+    "<i>Qidiruv ochiq turadi — ketma-ket yozaverishingiz mumkin.</i>"
+)
+
+
+def _parse_search(text: str):
+    """Qidiruv matnini raqamlar va ismlarga ajratadi.
+    Qaytaradi: (raqamlar to'plami, ismlar ro'yxati)"""
+    import re
+    numbers, names = set(), []
+    for part in re.split(r"[,;\n]+", text):
+        part = part.strip()
+        if not part:
+            continue
+        # Oraliq: 10-25
+        m = re.fullmatch(r"(\d+)\s*[-–—]\s*(\d+)", part)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            if a > b:
+                a, b = b, a
+            b = min(b, a + 500)          # bexosdan ulkan oraliqdan himoya
+            numbers.update(range(a, b + 1))
+            continue
+        # Bo'sh joy bilan ajratilgan raqamlar: 3 7 12
+        tokens = part.split()
+        if tokens and all(t.isdigit() for t in tokens):
+            numbers.update(int(t) for t in tokens)
+            continue
+        names.append(part)
+    return numbers, names
+
+
+def _digits(s: str) -> str:
+    return "".join(ch for ch in (s or "") if ch.isdigit())
+
+
+async def _run_search(text: str, apps: list):
+    """Qidiruvni bajaradi. Qaytaradi: (natijalar, topilmaganlar)
+    natijalar: [(tartib, app), ...] tartib bo'yicha saralangan"""
+    total = len(apps)
+    numbers, names = _parse_search(text)
+    found, missing = {}, []
+
+    # Tartib raqami bo'yicha. Tartibdan tashqari raqam bo'lsa —
+    # uni telefon deb qidiramiz (masalan 901234567 yozilgan holat).
+    for n in sorted(numbers):
+        if 1 <= n <= total:
+            found[apps[total - n].id] = (n, apps[total - n])
+            continue
+        s = str(n)
+        hits = [(total - idx, a) for idx, a in enumerate(apps)
+                if len(s) >= 4 and s in _digits(a.phone)]
+        if hits:
+            for tartib, a in hits:
+                found[a.id] = (tartib, a)
+        else:
+            missing.append(s)
+
+    # Ism yoki telefon bo'yicha.
+    # Avval SO'Z BOSHI bo'yicha qidiramiz ("Ali" -> "Ali Valiyev", "Aliyeva";
+    # lekin "Malika" ni tortmaydi). Hech narsa topilmasa — oddiy ichki qidiruv.
+    for name in names:
+        q = name.lower().strip()
+        qd = _digits(name)
+        strong, weak = [], []
+        for idx, a in enumerate(apps):
+            full = (a.full_name or "").lower()
+            if full:
+                if any(w.startswith(q) for w in full.split()):
+                    strong.append((total - idx, a))
+                elif q in full:
+                    weak.append((total - idx, a))
+            if qd and len(qd) >= 4 and qd in _digits(a.phone):
+                strong.append((total - idx, a))
+        hits = strong or weak
+        if hits:
+            for tartib, a in hits:
+                found[a.id] = (tartib, a)
+        else:
+            missing.append(name)
+
+    results = sorted(found.values(), key=lambda x: -x[0])
+    return results, missing
+
+
+def _search_results_keyboard(results, show_all: bool = True):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    rows = []
+    for tartib, a in results[:SEARCH_MAX_CARDS]:
+        name = (a.full_name or str(a.user_id))[:22]
+        rows.append([InlineKeyboardButton(
+            text=f"🔢{tartib} · {name}",
+            callback_data=f"as:open:{a.id}")])
+    if show_all and len(results) > 1:
+        rows.insert(0, [InlineKeyboardButton(
+            text=f"📋 Hammasini ko'rsatish ({min(len(results), SEARCH_MAX_CARDS)} ta)",
+            callback_data="as:all")])
+    rows.append([InlineKeyboardButton(text="❌ Qidiruvni yopish", callback_data="as:close")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 @router.callback_query(lambda c: c.data == "admin_app_search")
 async def app_search_start(callback: CallbackQuery, state: FSMContext):
@@ -683,45 +807,111 @@ async def app_search_start(callback: CallbackQuery, state: FSMContext):
         return
     await state.set_state(SearchApplicationState.tartib)
     await callback.message.answer(
-        f"🔍 Qidirilayotgan <b>tartib raqamini</b> (1 dan {len(apps)} gacha) "
-        f"yoki <b>ism familiyani</b> kiriting:",
+        f"{SEARCH_HELP}\n\nJami <b>{len(apps)}</b> ta ariza (tartib 1–{len(apps)}).",
         parse_mode="HTML"
     )
     await callback.answer()
 
 
-@router.message(SearchApplicationState.tartib)
+@router.message(SearchApplicationState.tartib, F.text)
 async def app_search_run(message: Message, state: FSMContext, bot: Bot):
     text = message.text.strip()
+    if not text:
+        return
+    apps = await get_applications()
+    results, missing = await _run_search(text, apps)
+
+    if not results:
+        await message.answer(
+            f"❌ Hech narsa topilmadi: <code>{html.escape(text)}</code>\n\n"
+            f"{SEARCH_HELP}",
+            parse_mode="HTML")
+        return
+
+    # Natijalarni keyingi tugmalar uchun eslab qolamiz
+    await state.update_data(last=[a.id for _, a in results[:SEARCH_MAX_CARDS]])
+
+    vac_map = {v.id: v for v in await get_all_vacancies()}
+    lines = [f"🔍 <b>{len(results)} ta nomzod topildi</b>\n"]
+    for tartib, a in results[:SEARCH_MAX_CARDS]:
+        v = vac_map.get(a.vacancy_id)
+        mx = a.max_total if a.max_total is not None else 19
+        ball = (f"{color_for(a.total_score, mx)}{a.total_score}/{mx}"
+                if a.total_score is not None else "⚪️—")
+        lines.append(
+            f"🔢<b>{tartib}</b> · {html.escape(a.full_name or '—')} · "
+            f"{html.escape(a.phone or '—')}\n"
+            f"    {html.escape(v.title if v else '—')} · {ball}")
+    if len(results) > SEARCH_MAX_CARDS:
+        lines.append(f"\n<i>… va yana {len(results) - SEARCH_MAX_CARDS} ta. "
+                     f"Aniqroq qidiring.</i>")
+    if missing:
+        lines.append(f"\n⚠️ Topilmadi: <code>{html.escape(', '.join(missing[:10]))}</code>")
+
+    await message.answer("\n".join(lines), parse_mode="HTML",
+                         reply_markup=_search_results_keyboard(results))
+
+
+@router.message(SearchApplicationState.tartib)
+async def app_search_wrong(message: Message):
+    await message.answer("⚠️ Qidiruv uchun matn yozing (raqam yoki ism).")
+
+
+@router.callback_query(lambda c: c.data.startswith("as:open:"))
+async def app_search_open(callback: CallbackQuery, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
+        return
+    try:
+        app_id = int(callback.data.split(":")[2])
+    except (ValueError, IndexError):
+        await callback.answer("Xato.")
+        return
     apps = await get_applications()
     total = len(apps)
-    await state.clear()
-
-    if text.isdigit():
-        tartib = int(text)
-        if not (1 <= tartib <= total):
-            await message.answer(f"⚠️ Tartib {1} dan {total} gacha bo'lishi kerak.")
+    for idx, a in enumerate(apps):
+        if a.id == app_id:
+            v = await get_vacancy(a.vacancy_id) if a.vacancy_id else None
+            await _send_app_card(callback.message, bot, a, total - idx, v)
+            await callback.answer()
             return
-        app = apps[total - tartib]
-        v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        await _send_app_card(message, bot, app, tartib, v)
-        return
+    await callback.answer("Ariza topilmadi.", show_alert=True)
 
-    query = text.lower()
-    matches = [
-        (idx, a) for idx, a in enumerate(apps)
-        if a.full_name and query in a.full_name.lower()
-    ]
-    if not matches:
-        await message.answer(f"❌ \"{text}\" bo'yicha ariza topilmadi.")
+
+@router.callback_query(lambda c: c.data == "as:all")
+async def app_search_all(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    role = await get_role(callback.from_user.id)
+    if not is_hr(role):
+        await callback.answer("❌ Ruxsat yo'q.")
         return
-    await message.answer(f"🔍 <b>{len(matches)} ta natija topildi:</b>", parse_mode="HTML")
-    for idx, app in matches[:20]:
-        tartib = total - idx
-        v = await get_vacancy(app.vacancy_id) if app.vacancy_id else None
-        await _send_app_card(message, bot, app, tartib, v)
-    if len(matches) > 20:
-        await message.answer(f"… va yana {len(matches) - 20} ta natija. Aniqroq qidiring.")
+    data = await state.get_data()
+    ids = data.get("last", [])
+    if not ids:
+        await callback.answer("Natija eskirgan — qaytadan qidiring.", show_alert=True)
+        return
+    await callback.answer(f"Yuborilmoqda… ({len(ids)} ta)")
+    apps = await get_applications()
+    total = len(apps)
+    by_id = {a.id: (total - idx, a) for idx, a in enumerate(apps)}
+    for aid in ids:
+        item = by_id.get(aid)
+        if not item:
+            continue
+        tartib, a = item
+        v = await get_vacancy(a.vacancy_id) if a.vacancy_id else None
+        await _send_app_card(callback.message, bot, a, tartib, v)
+
+
+@router.callback_query(lambda c: c.data == "as:close")
+async def app_search_close(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer("✅ Qidiruv yopildi.")
+    await callback.answer()
 
 
 # ── Ariza egasiga xabar yuborish ──────────────────────────────────────────
