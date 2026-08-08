@@ -1,6 +1,6 @@
 from sqlalchemy import (
     BigInteger, String, Boolean, DateTime, Text,
-    Integer, ForeignKey, func
+    Integer, ForeignKey, func, Index, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.connect import Base
@@ -147,6 +147,17 @@ class ApplicationAnswer(Base):
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ai_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)    # keyinchalik AI izohi
+
+    # "1 savol = 1 javob" — biznes-qoida DB darajasida (tahlil/C2.md, R1).
+    # Mavjud bazalarga migrate_v7 quradi; yangi bazalarga create_all quradi.
+    __table_args__ = (
+        Index(
+            "uq_answer_app_question", "application_id", "question_id",
+            unique=True,
+            sqlite_where=text("question_id IS NOT NULL"),
+            postgresql_where=text("question_id IS NOT NULL"),
+        ),
+    )
 
 
 class BotSettings(Base):

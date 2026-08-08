@@ -633,13 +633,31 @@ async def create_answer(application_id: int, question_id: int | None, qtype: str
                         order_num: int, question_text: str | None,
                         answer_text: str | None, score: int | None,
                         max_score: int | None):
+    """Javob yozadi — dublikatga chidamli (idempotent).
+
+    (application_id, question_id) juftligi allaqachon bo'lsa — jim o'tadi
+    (uq_answer_app_question indeksi, tahlil/C2.md R1). Shu tufayli takror
+    bosish, webhook retry yoki ikki worker poygasi ikkinchi qator yozolmaydi.
+    question_id NULL bo'lsa cheklov qo'llanmaydi (oddiy INSERT).
+    """
+    values = dict(
+        application_id=application_id, question_id=question_id, qtype=qtype,
+        order_num=order_num, question_text=question_text, answer_text=answer_text,
+        score=score, max_score=max_score,
+    )
     async with async_session() as session:
-        ans = ApplicationAnswer(
-            application_id=application_id, question_id=question_id, qtype=qtype,
-            order_num=order_num, question_text=question_text, answer_text=answer_text,
-            score=score, max_score=max_score,
-        )
-        session.add(ans)
+        dialect = session.bind.dialect.name
+        if dialect in ("sqlite", "postgresql"):
+            if dialect == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert as _insert
+            else:
+                from sqlalchemy.dialects.postgresql import insert as _insert
+            # Maqsadsiz ON CONFLICT DO NOTHING: indeks hali qurilmagan
+            # bazada ham xato bermaydi (shunchaki eski xatti-harakat qoladi).
+            stmt = _insert(ApplicationAnswer).values(**values).on_conflict_do_nothing()
+            await session.execute(stmt)
+        else:
+            session.add(ApplicationAnswer(**values))
         await session.commit()
 
 
@@ -702,6 +720,15 @@ async def recompute_scores(app_id: int):
             app.test_score = sum((a.score or 0) for a in tests)
         if written and all(a.score is not None for a in written):
             app.written_score = sum(a.score for a in written)
+
+        # Chegara-signal: ball maksimumdan oshsa — dublikat javob belgisi
+        # (uq_answer_app_question buni to'sishi kerak; bu log — lakmus qog'oz)
+        from app.question_bank import MAX_TEST, MAX_WRITTEN
+        if (app.test_score or 0) > MAX_TEST or (app.written_score or 0) > MAX_WRITTEN:
+            print(f"[SCORE WARNING] Ariza #{app.id}: test={app.test_score}/"
+                  f"{MAX_TEST} yozma={app.written_score}/{MAX_WRITTEN} — "
+                  f"chegaradan yuqori, dublikat javob bo'lishi mumkin!",
+                  flush=True)
 
         # Qaysi bosqichlar shu arizaga tegishli — vakansiya sozlamasidan
         from app.question_bank import STAGE_ON

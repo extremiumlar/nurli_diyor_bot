@@ -62,7 +62,7 @@ fi
 
 # ── 5. Migratsiyalar ───────────────────────────────────────────────
 step "Migratsiyalar"
-for m in migrate_v2 migrate_v3 migrate_v4 migrate_v5 migrate_v6; do
+for m in migrate_v2 migrate_v3 migrate_v4 migrate_v5 migrate_v6 migrate_v7; do
     [ -f "$m.py" ] || continue
     # Muvaffaqiyat CHIQISH KODI bilan aniqlanadi (matnga tayanmaymiz)
     if out=$(python "$m.py" 2>&1); then
