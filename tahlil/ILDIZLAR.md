@@ -119,12 +119,15 @@
   (default-deny, chegara = `is_hr`) — mavjud teshiklar ham, kelajakdagi yangi
   handlerlar ham avtomatik yopiladi. Namuna loyihada bor:
   `screening_admin.py` allaqachon markaziy `_guard()` ishlatadi.
-- **Holat:** ochiq (yechim tasdiqlangan, joriy etilmoqda)
+- **Holat:** ✅ YECHILGAN — 2026-08-14 prodga chiqdi (commit ae9d9ff):
+  middleware ulangan (message=1, callback=1), is_hr chegarasi tasdiqlandi
+  (None/project_admin bloklanadi), jobseeker/screening routerlariga tegmagan
 - **Farq:** R2 — authentication (so'rov haqiqiy Telegram'danmi, webhook);
   R3 — authorization (haqiqiy foydalanuvchi haqli mi, handler). Ketma-ket
   qatlamlar, har xil mexanizm.
 - **Tarix:** 2026-08-14 yaratildi (S2 tahlilida, G1 gipotezasidan tasdiqlanib
-  ko'chirildi)
+  ko'chirildi); tekshiruvda #1 qaytarildi (darvoza is_hr emas, role!=None edi —
+  project_admin teshigi), tuzatilib #2 da ✅ QABUL; o'sha kuni deploy
 
 ---
 
@@ -183,4 +186,4 @@ ma'lumot emas — bu yerda faqat tasdiqlanganlar, ildiz kesimida)
 |---|---|---|---|
 | R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
 | R2 — tashqi kirish autentifikatsiyasiz | 2+5 | S1 ✅ | ✅ yechilgan (prod, 2026-08-14) |
-| R3 — markazlashgan avtorizatsiya yo'q | 2+5 | S2 ✅ | ochiq (joriy etilmoqda) |
+| R3 — markazlashgan avtorizatsiya yo'q | 2+5 | S2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
