@@ -42,7 +42,7 @@ birinchi. Tavsiya etilgan boshlanish tartibi: S1 → S2 → S4 → D1 → C1 →
 | ID | Muammo | Og'irlik | Kod holati | Tahlil | Hukm | Ildiz | Variant | Fayl |
 |---|---|---|---|---|---|---|---|---|
 | C1 | Webhook retry dedup yo'q — e'lon 2-3 marta ketadi | Yuqori | ❌ ochiq | ⬜ | — | — | — | — |
-| C2 | Test tugmasini 2 marta bosish -> ball 9 dan oshadi | Yuqori | 🟡 qisman | 📝 | ✅ QABUL | R1 | C | [C2.md](C2.md) |
+| C2 | Test tugmasini 2 marta bosish -> ball 9 dan oshadi | Yuqori | ✅ tuzatilgan | 📝 | ✅ QABUL | R1 | C | [C2.md](C2.md) |
 | C3 | FSM update_data atomik emas — lost update | Yuqori | ❌ ochiq | ⬜ | — | — | — | — |
 | C4 | SQLite FSM'da WAL/busy_timeout yo'q — 'database is locked' | Yuqori | ❌ ochiq | ⬜ | — | — | — | — |
 | C5 | recompute_scores alohida tranzaksiya — HR ballari yo'qoladi | Yuqori | ❌ ochiq | ⬜ | — | — | — | — |

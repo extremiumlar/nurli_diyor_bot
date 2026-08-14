@@ -70,9 +70,12 @@
   question_id) WHERE question_id IS NOT NULL` + mavjud dublikatlarni tozalash
   + `create_answer` ni idempotent qilish (`ON CONFLICT DO NOTHING`) —
   batafsil reja tahlil/C2.md I-bosqichida.
-- **Holat:** ochiq (yechim rejasi tasdiqlangan, kodga joriy etilmagan)
+- **Holat:** ✅ YECHILGAN — 2026-08-14 prodga chiqdi (commit 612bc17):
+  migrate_v7 o'tdi, indeks qurildi, prodda dublikat 0 ta chiqdi (664 ariza)
 - **Tarix:** 2026-08-08 yaratildi (C2 tahlilida, G6 gipotezasidan
-  tasdiqlanib ko'chirildi)
+  tasdiqlanib ko'chirildi); 2026-08-08 yechim joriy etildi (migrate_v7 +
+  idempotent create_answer + SCORE WARNING), lokal sinovlar o'tdi;
+  2026-08-14 deploy — SSH orqali (port 30151), prod tekshiruvi toza
 
 ---
 
@@ -133,4 +136,4 @@ ma'lumot emas — bu yerda faqat tasdiqlanganlar, ildiz kesimida)
 
 | Ildiz | Turi | Bandlar | Holat |
 |---|---|---|---|
-| R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ochiq (reja bor) |
+| R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
