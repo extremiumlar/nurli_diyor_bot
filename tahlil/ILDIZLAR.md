@@ -100,6 +100,32 @@
   qaytarildi (set_webhook2 xatosi), tuzatilib #2 da ✅ QABUL; o'sha kuni deploy
   (fail-open tartibi bilan, bot uzilmadi)
 
+### R3 — Markazlashgan avtorizatsiya qatlami yo'q (default-allow)
+- **Turi:** 2 (yo'q qatlam) + 5 (noto'g'ri default)
+- **Tavsif:** Admin router'ida ruxsat tekshiruvi **markazlashmagan** — har
+  handler 4 qatorlik `get_role` + `is_hr` naqshini o'zi qo'lda yozishi kerak,
+  router'da middleware yo'q. Default "ochiq": naqsh yozilmagan handler hamma
+  uchun ishlaydi. 64 handlerdan **10 tasida** naqsh unutilgan (CV, rasm,
+  arizalar ro'yxati, vakansiya o'chirish...). Bundan tashqari naqshning o'zi
+  ham nomuvofiq qo'llanilgan — 3 joyda `is_hr` o'rniga zaifroq `if not role`
+  ishlatilgan (`admin_panel:48`, `admin_back:61`, `show_stats:80`), ya'ni
+  `project_admin` ham o'tib ketadi.
+- **Asosiy dalil:** admin.py:30 (middleware yo'q), :33-41 (get_role/is_hr),
+  :1119 get_cv, :1135 get_photo, :633 show_applications, :237
+  vacancy_delete_confirm, :214 toggle_vac, :1109/:1114 app_post — guardsiz;
+  :48/:61/:80 — zaif darvoza
+- **Bandlar:** S2 (✅ QABUL — tahlil/S2.md); H-guruh qismlari (ehtimoliy)
+- **Tub yechim yo'nalishi:** admin router'ga `AdminGuardMiddleware`
+  (default-deny, chegara = `is_hr`) — mavjud teshiklar ham, kelajakdagi yangi
+  handlerlar ham avtomatik yopiladi. Namuna loyihada bor:
+  `screening_admin.py` allaqachon markaziy `_guard()` ishlatadi.
+- **Holat:** ochiq (yechim tasdiqlangan, joriy etilmoqda)
+- **Farq:** R2 — authentication (so'rov haqiqiy Telegram'danmi, webhook);
+  R3 — authorization (haqiqiy foydalanuvchi haqli mi, handler). Ketma-ket
+  qatlamlar, har xil mexanizm.
+- **Tarix:** 2026-08-14 yaratildi (S2 tahlilida, G1 gipotezasidan tasdiqlanib
+  ko'chirildi)
+
 ---
 
 ## BOSHLANG'ICH GIPOTEZALAR (⚠️ TASDIQLANMAGAN)
@@ -116,11 +142,7 @@ bilan ishlashi mumkin, lekin:
   o'zida bir qator bilan qayd et ("G3 rad etildi: <sabab>, qarang
   tahlil/<BAND>.md").
 
-### G1 — Markazlashgan ruxsat qatlami yo'q (default-allow)
-- Taxminiy turi: 2 (yo'q qatlam) + 5 (noto'g'ri default)
-- Har handler ruxsatni o'zi tekshiradi; unutilgan joyda hamma narsa ochiq.
-  `middlewares/role_check.py` bor, lekin ulanmagan.
-- Ehtimoliy bandlar: S1, S2, H-guruh qismlari
+*(G1 — 2026-08-14 da S2 tahlili tasdiqlagach R3 ga ko'chirildi.)*
 
 ### G2 — Foydalanuvchi matni uchun escape shartnomasi yo'q
 - Taxminiy turi: 2 (yo'q qatlam)
@@ -161,3 +183,4 @@ ma'lumot emas — bu yerda faqat tasdiqlanganlar, ildiz kesimida)
 |---|---|---|---|
 | R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
 | R2 — tashqi kirish autentifikatsiyasiz | 2+5 | S1 ✅ | ✅ yechilgan (prod, 2026-08-14) |
+| R3 — markazlashgan avtorizatsiya yo'q | 2+5 | S2 ✅ | ochiq (joriy etilmoqda) |

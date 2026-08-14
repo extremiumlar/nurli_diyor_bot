@@ -1,5 +1,5 @@
 import html
-from aiogram import Router, F, Bot
+from aiogram import Router, F, Bot, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -39,6 +39,34 @@ async def get_role(user_id: int) -> str | None:
 
 def is_hr(role: str) -> bool:
     return role in ("hr_admin", "super_admin")
+
+
+class AdminGuardMiddleware(BaseMiddleware):
+    """Admin router'ining har event'ida ruxsatni tekshiradi (default-deny).
+
+    Ilgari har handler o'z tekshiruvini qo'lda yozardi va 10 tasida u
+    unutilgan edi — natijada har kim CV/rasm/arizalarni ko'rar, vakansiya
+    o'chirar edi (tahlil/S2.md, ildiz R3).
+
+    Chegara — `is_hr`, "rol bormi" EMAS: get_role project_admin uchun ham
+    qiymat qaytaradi, lekin u HR emas. Endi yangi handler qo'shilganda ham
+    himoya avtomatik ishlaydi.
+    """
+
+    async def __call__(self, handler, event, data):
+        user = data.get("event_from_user")
+        role = await get_role(user.id) if user else None
+        if not is_hr(role):
+            if isinstance(event, CallbackQuery):
+                await event.answer("❌ Ruxsat yo'q.", show_alert=True)
+            # Message bo'lsa jim qolamiz — admin buyruqlari oshkor bo'lmasin
+            return
+        data["role"] = role
+        return await handler(event, data)
+
+
+router.message.middleware(AdminGuardMiddleware())
+router.callback_query.middleware(AdminGuardMiddleware())
 
 
 # ── /admin ─────────────────────────────────────────────────────────────────
