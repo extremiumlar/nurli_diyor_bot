@@ -1,13 +1,14 @@
 import sys
 import os
 import json
+import hmac
 import asyncio
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from app.config import BOT_TOKEN
+from app.config import BOT_TOKEN, WEBHOOK_SECRET
 from app.fsm_storage import SQLiteFSMStorage
 from app.database.connect import engine, Base
 from app.database import models  # noqa
@@ -44,6 +45,18 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
 
     if path == "/webhook" and method == "POST":
+        # Autentifikatsiya (S1, tahlil/S1.md — R2): so'rov haqiqatan
+        # Telegram'dan kelganini tasdiqlaymiz. WEBHOOK_SECRET bo'sh bo'lsa —
+        # tekshirilmaydi (deploy oralig'ida bot o'lmasligi uchun) + ogohlantirish.
+        if WEBHOOK_SECRET:
+            got = environ.get("HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN", "")
+            if not hmac.compare_digest(got, WEBHOOK_SECRET):
+                start_response("403 Forbidden", [("Content-Type", "text/plain")])
+                return [b"forbidden"]
+        else:
+            print("[WEBHOOK WARNING] WEBHOOK_SECRET o'rnatilmagan — "
+                  "webhook himoyasiz!", file=sys.stderr)
+
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             body   = environ["wsgi.input"].read(length)

@@ -77,6 +77,25 @@
   idempotent create_answer + SCORE WARNING), lokal sinovlar o'tdi;
   2026-08-14 deploy — SSH orqali (port 30151), prod tekshiruvi toza
 
+### R2 — Tashqi kirish nuqtasi autentifikatsiyasiz (webhook)
+- **Turi:** 2 (yo'q qatlam) + 5 (noto'g'ri default)
+- **Tavsif:** Bot ochiq internetdagi HTTPS endpoint (`/webhook`) orqali
+  update oladi, lekin so'rovning haqiqatan Telegram'dan kelganini tasdiqlamaydi
+  — `set_webhook` secret o'rnatmaydi, WSGI hech qanday sarlavha tekshirmaydi.
+  Default xavfsiz emas tomonga qaragan (tekshirilmasa — qabul). Butun ruxsat
+  tizimi (`from_user.id`) shu qatlam borligini nazarda tutadi, lekin qatlam
+  qurilmagan — shuning uchun soxta update bilan har kim super_admin bo'la oladi.
+- **Asosiy dalil:** passenger_wsgi.py:46-51 (manba tekshirilmaydi),
+  set_webhook.py:18 (secret yo'q), admin.py:33-41 (from_user.id ga ishonch)
+- **Bandlar:** S1 (📝 tahlilda — tahlil/S1.md)
+- **Tub yechim yo'nalishi:** Telegram secret_token — `.env` WEBHOOK_SECRET +
+  `set_webhook(secret_token=...)` + WSGI `X-Telegram-Bot-Api-Secret-Token`
+  ni `hmac.compare_digest` bilan tekshirish, mos kelmasa 403.
+- **Holat:** ochiq (tahlil tekshiruvda)
+- **Farq:** G1/S2 — authorization (ichkarida kim nima qiladi); R2 — authentication
+  (so'rov umuman haqiqiymi). Ketma-ket qatlamlar, lekin har xil.
+- **Tarix:** 2026-08-14 yaratildi (S1 tahlilida)
+
 ---
 
 ## BOSHLANG'ICH GIPOTEZALAR (⚠️ TASDIQLANMAGAN)
@@ -137,3 +156,4 @@ ma'lumot emas — bu yerda faqat tasdiqlanganlar, ildiz kesimida)
 | Ildiz | Turi | Bandlar | Holat |
 |---|---|---|---|
 | R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
+| R2 — tashqi kirish autentifikatsiyasiz | 2+5 | S1 📝 | ochiq (tekshiruvda) |

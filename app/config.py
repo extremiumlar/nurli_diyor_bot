@@ -7,6 +7,12 @@ BOT_TOKEN      = os.getenv("BOT_TOKEN")
 DATABASE_URL   = os.getenv("DATABASE_URL")
 SUPER_ADMIN_ID = int(os.getenv("SUPER_ADMIN_ID"))
 
+# Webhook autentifikatsiyasi (S1, tahlil/S1.md — R2).
+# Telegram set_webhook da o'rnatilgan secret_token ni har so'rovda
+# X-Telegram-Bot-Api-Secret-Token sarlavhasida yuboradi; WSGI shuni tekshiradi.
+# Bo'sh bo'lsa — himoya o'chiq (deploy oralig'ida bot o'lmasligi uchun).
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
 # Majburiy obuna
 CHANNEL_ID     = os.getenv("CHANNEL_ID")          # "-100xxxxxxxxx"
 CHANNEL_LINK   = os.getenv("CHANNEL_LINK")         # "https://t.me/kanal_nomi"
