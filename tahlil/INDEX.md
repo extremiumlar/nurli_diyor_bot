@@ -24,7 +24,7 @@ birinchi. Tavsiya etilgan boshlanish tartibi: S1 → S2 → S4 → D1 → C1 →
 
 | ID | Muammo | Og'irlik | Kod holati | Tahlil | Hukm | Ildiz | Variant | Fayl |
 |---|---|---|---|---|---|---|---|---|
-| S1 | Webhook himoyasiz — istalgan odam super_admin bo'la oladi | Kritik | ❌ ochiq | 📝 | ✅ QABUL | R2 | C | [S1.md](S1.md) |
+| S1 | Webhook himoyasiz — istalgan odam super_admin bo'la oladi | Kritik | ✅ tuzatilgan | 📝 | ✅ QABUL | R2 | C | [S1.md](S1.md) |
 | S2 | 5 ta handler rol tekshirmaydi — CV/rasm/PII sizadi | Kritik | ❌ ochiq | ⬜ | — | — | — | — |
 | S3 | HTML-injection — nomzod ismi xabarni 'o'ldiradi' | Kritik | 🟡 qisman | ⬜ | — | — | — | — |
 | S4 | Postgres paroli ochiq holda git'da | Kritik | ❌ ochiq | ⬜ | — | — | — | — |

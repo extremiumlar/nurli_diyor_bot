@@ -91,10 +91,14 @@
 - **Tub yechim yo'nalishi:** Telegram secret_token — `.env` WEBHOOK_SECRET +
   `set_webhook(secret_token=...)` + WSGI `X-Telegram-Bot-Api-Secret-Token`
   ni `hmac.compare_digest` bilan tekshirish, mos kelmasa 403.
-- **Holat:** ochiq (tahlil tekshiruvda)
+- **Holat:** ✅ YECHILGAN — 2026-08-14 prodga chiqdi (commit a28ac46):
+  secretsiz/noto'g'ri so'rov 403, to'g'ri secret 200, Telegram xatosiz
+  (LiteSpeed X-Telegram-Bot-Api-Secret-Token sarlavhasini uzatishi tasdiqlandi)
 - **Farq:** G1/S2 — authorization (ichkarida kim nima qiladi); R2 — authentication
   (so'rov umuman haqiqiymi). Ketma-ket qatlamlar, lekin har xil.
-- **Tarix:** 2026-08-14 yaratildi (S1 tahlilida)
+- **Tarix:** 2026-08-14 yaratildi (S1 tahlilida); 2026-08-14 tekshiruvda #1
+  qaytarildi (set_webhook2 xatosi), tuzatilib #2 da ✅ QABUL; o'sha kuni deploy
+  (fail-open tartibi bilan, bot uzilmadi)
 
 ---
 
@@ -156,4 +160,4 @@ ma'lumot emas — bu yerda faqat tasdiqlanganlar, ildiz kesimida)
 | Ildiz | Turi | Bandlar | Holat |
 |---|---|---|---|
 | R1 — javob "hodisa", "holat" emas | 6 | C2 ✅ | ✅ yechilgan (prod, 2026-08-14) |
-| R2 — tashqi kirish autentifikatsiyasiz | 2+5 | S1 📝 | ochiq (tekshiruvda) |
+| R2 — tashqi kirish autentifikatsiyasiz | 2+5 | S1 ✅ | ✅ yechilgan (prod, 2026-08-14) |
